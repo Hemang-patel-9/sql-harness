@@ -1,36 +1,84 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Frontend — Next.js
 
-## Getting Started
+Next.js 16 (App Router) + TypeScript + Tailwind v4, with `motion` (Framer
+Motion) for animation, `lucide-react` for icons, and `next-themes` for the
+colour mode.
 
-First, run the development server:
+## Run
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+npm run dev      # http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+The API base URL comes from `.env.local`:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```
+NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+The backend's CORS allowlist is set to `http://localhost:3000`. If you run the
+frontend on another port, add it to `CORS_ORIGINS` in `backend/.env`.
 
-## Learn More
+## Routes
 
-To learn more about Next.js, take a look at the following resources:
+| Route          | What it is                                    |
+| -------------- | --------------------------------------------- |
+| `/login`       | Demo sign-in (outside the app shell)          |
+| `/`            | Query — the NL→SQL console, calls the backend |
+| `/history`     | Past questions and the SQL they produced      |
+| `/schema`      | Tables and columns in scope                   |
+| `/saved`       | Kept queries                                  |
+| `/connections` | Databases the workspace can reach             |
+| `/settings`    | Colour mode and profile                       |
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Everything except `/login` renders inside `(app)/layout.tsx` → `AppShell`,
+which supplies the navbar and sidebar and redirects to `/login` when there is
+no session.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Layout
 
-## Deploy on Vercel
+```
+src/
+├── app/
+│   ├── layout.tsx          fonts, ThemeProvider, SessionProvider
+│   ├── globals.css         design tokens (light + dark), base styles
+│   ├── login/page.tsx      sign-in
+│   └── (app)/              route group that shares the app shell
+│       ├── layout.tsx
+│       └── page.tsx, history/, schema/, saved/, connections/, settings/
+├── components/
+│   ├── app-shell.tsx       navbar + sidebar + session guard
+│   ├── navbar.tsx          brand, settings, notifications, theme, account
+│   ├── sidebar.tsx         collapsible rail (desktop) + drawer (mobile)
+│   ├── query-console.tsx   the NL→SQL form
+│   ├── sql-block.tsx       monochrome SQL syntax emphasis
+│   └── ui/                 icon-button, dropdown, avatar, page-shell
+└── lib/
+    ├── api.ts              backend client
+    ├── nav.ts              the sidebar tabs
+    ├── motion.ts           shared transitions and variants
+    ├── session.ts          demo session + sidebar preference stores
+    └── store.ts            localStorage-backed useSyncExternalStore helpers
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Design notes
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- **Tokens, not raw colours.** `globals.css` defines `--paper`, `--surface`,
+  `--line`, `--ink`, `--muted`, `--marker`, `--wash` for light, and overrides
+  them under `.dark`. Tailwind exposes them as `bg-paper`, `text-ink`, and so
+  on, so a component is written once and works in both modes.
+- **Amber is a marker, never a text colour.** It appears as the solid caret
+  (brand, active tab), a wash behind the active row, the unread dot, and
+  behind SQL literals. Everything else is a cool neutral.
+- **Two faces, two jobs.** Instrument Sans for prose and UI, IBM Plex Mono for
+  identifiers, SQL, labels, and numbers.
+- **Motion is functional.** The active-tab caret travels between tabs with a
+  shared `layoutId`; the sidebar animates its width; menus scale from their
+  own corner. `prefers-reduced-motion` is respected globally.
+
+## Session
+
+Sign-in is a demo: `lib/session.ts` writes `{ name, email }` to
+`localStorage` and nothing is verified. Replace `sessionStore` with real auth
+calls when the backend grows an `/api/auth` surface.

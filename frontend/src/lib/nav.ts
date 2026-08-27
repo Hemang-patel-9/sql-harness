@@ -1,0 +1,48 @@
+import { Database, History, Plug, Star, Terminal } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
+
+export interface NavItem {
+  href: string;
+  label: string;
+  icon: LucideIcon;
+  /** Shown in the collapsed-rail tooltip and the page header. */
+  blurb: string;
+}
+
+export const NAV_ITEMS: NavItem[] = [
+  {
+    href: "/",
+    label: "Query",
+    icon: Terminal,
+    blurb: "Ask a question, read the SQL",
+  },
+  {
+    href: "/history",
+    label: "History",
+    icon: History,
+    blurb: "Everything you have asked",
+  },
+  {
+    href: "/schema",
+    label: "Schema",
+    icon: Database,
+    blurb: "Tables and columns in scope",
+  },
+  {
+    href: "/saved",
+    label: "Saved",
+    icon: Star,
+    blurb: "Queries you kept",
+  },
+  {
+    href: "/connections",
+    label: "Connections",
+    icon: Plug,
+    blurb: "Databases you can reach",
+  },
+];
+
+export function isActivePath(pathname: string, href: string): boolean {
+  if (href === "/") return pathname === "/";
+  return pathname === href || pathname.startsWith(`${href}/`);
+}
