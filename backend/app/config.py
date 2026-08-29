@@ -6,10 +6,21 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
-    app_name: str = "Natural Language to SQL API"
+    app_name: str = "SQL Harness API"
     debug: bool = True
     # Comma-separated list of allowed CORS origins.
     cors_origins: str = "http://localhost:3000"
+
+    # Local PostgreSQL 18 listens on 5433. Override the whole URL in .env.
+    # asyncpg, not psycopg: psycopg's async mode refuses Windows' ProactorEventLoop.
+    database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5433/nl2sql"
+    db_echo: bool = False
+    db_pool_size: int = 5
+    db_max_overflow: int = 5
+
+    # Session cookie (opaque token; only its sha256 hash is stored, see security.py).
+    session_cookie_name: str = "sqlharness_session"
+    session_ttl_days: int = 30
 
     @property
     def cors_origins_list(self) -> list[str]:

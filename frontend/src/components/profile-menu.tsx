@@ -9,7 +9,7 @@ import { useSession } from "./session-provider";
 export function ProfileMenu() {
   const { session, signOut } = useSession();
   const router = useRouter();
-  const name = session?.name ?? "Guest";
+  const name = session?.fullName ?? "Guest";
   const email = session?.email ?? "not signed in";
 
   return (

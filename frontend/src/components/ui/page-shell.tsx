@@ -1,6 +1,7 @@
 "use client";
 
 import { motion } from "motion/react";
+import type { LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { riseItem, stagger } from "../../lib/motion";
 import { cn } from "../../lib/utils";
@@ -65,6 +66,29 @@ export function Panel({
       )}
     >
       {children}
+    </div>
+  );
+}
+
+/** Shown in place of a panel/list when there is no data to show yet. */
+export function EmptyState({
+  icon: Icon,
+  title,
+  description,
+}: {
+  icon: LucideIcon;
+  title: string;
+  description: string;
+}) {
+  return (
+    <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed border-line px-6 py-16 text-center">
+      <span className="flex h-11 w-11 items-center justify-center rounded-full bg-surface-2 text-muted">
+        <Icon className="h-5 w-5" />
+      </span>
+      <div>
+        <p className="text-sm font-medium text-ink">{title}</p>
+        <p className="mt-1 max-w-sm text-sm text-muted">{description}</p>
+      </div>
     </div>
   );
 }

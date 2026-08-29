@@ -1,32 +1,18 @@
 import { createPersistedStore } from "./store";
 
 /**
- * Demo session. Kept in localStorage — there is no real authentication behind
- * this. Swap the store for real auth calls when the backend grows an
- * /api/auth surface.
+ * The signed-in user. Sourced from the backend (httpOnly session cookie +
+ * GET /api/auth/me) — never persisted client-side, since the cookie is
+ * already the source of truth and isn't readable from JS.
  */
 export interface Session {
-  name: string;
+  id: string;
   email: string;
+  fullName: string;
 }
 
-export const sessionStore = createPersistedStore<Session | null>({
-  key: "querysmith.session",
-  fallback: null,
-  parse(raw) {
-    try {
-      const parsed = JSON.parse(raw) as Partial<Session>;
-      if (!parsed.name || !parsed.email) return null;
-      return { name: parsed.name, email: parsed.email };
-    } catch {
-      return null;
-    }
-  },
-  serialize: (value) => JSON.stringify(value),
-});
-
 export const sidebarCollapsedStore = createPersistedStore<boolean>({
-  key: "querysmith.sidebar.collapsed",
+  key: "sqlharness.sidebar.collapsed",
   fallback: false,
   parse: (raw) => raw === "1",
   serialize: (value) => (value ? "1" : "0"),

@@ -19,8 +19,8 @@ const plexMono = IBM_Plex_Mono({
 
 export const metadata: Metadata = {
   title: {
-    default: "QuerySmith",
-    template: "%s · QuerySmith",
+    default: "SQL Harness",
+    template: "%s · SQL Harness",
   },
   description: "Ask a question in plain language. Read it back as SQL.",
 };

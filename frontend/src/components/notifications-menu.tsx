@@ -37,13 +37,6 @@ const DEMO_NOTES: Note[] = [
     at: "Yesterday",
     unread: true,
   },
-  {
-    id: "n4",
-    title: "Query saved",
-    detail: "Top customers by lifetime value is now in Saved",
-    at: "2 days ago",
-    unread: false,
-  },
 ];
 
 export function NotificationsMenu() {

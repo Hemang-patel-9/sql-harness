@@ -28,7 +28,7 @@ export function Brand({
         aria-hidden
         className={cn("h-4 w-[3px] rounded-[1px] bg-marker", caretClassName)}
       />
-      QuerySmith
+      SQL Harness
     </Link>
   );
 }

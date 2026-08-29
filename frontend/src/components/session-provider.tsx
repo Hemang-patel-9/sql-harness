@@ -1,38 +1,68 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { createContext, useCallback, useContext, useMemo } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
-import { sessionStore, type Session } from "../lib/session";
-import { useIsMounted, useStore } from "../lib/store";
+import { getCurrentUser, login as apiLogin, logout as apiLogout, signup as apiSignup } from "../lib/api";
+import type { AuthUser } from "../lib/api";
 
 interface SessionValue {
-  session: Session | null;
-  /** False until the browser has been able to read localStorage. */
+  session: AuthUser | null;
+  /** False until the initial /api/auth/me check has resolved. */
   ready: boolean;
-  signIn: (session: Session) => void;
+  login: (input: { email: string; password: string }) => Promise<void>;
+  signup: (input: { fullName: string; email: string; password: string }) => Promise<void>;
   signOut: () => void;
 }
 
 const SessionContext = createContext<SessionValue | null>(null);
 
 export function SessionProvider({ children }: { children: ReactNode }) {
-  const session = useStore(sessionStore);
-  const ready = useIsMounted();
+  const [session, setSession] = useState<AuthUser | null>(null);
+  const [ready, setReady] = useState(false);
   const router = useRouter();
 
-  const signIn = useCallback((next: Session) => {
-    sessionStore.set(next);
+  useEffect(() => {
+    let cancelled = false;
+    getCurrentUser()
+      .then((user) => {
+        if (!cancelled) setSession(user);
+      })
+      .catch(() => {
+        if (!cancelled) setSession(null);
+      })
+      .finally(() => {
+        if (!cancelled) setReady(true);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
+  const login = useCallback(async (input: { email: string; password: string }) => {
+    const user = await apiLogin(input);
+    setSession(user);
+  }, []);
+
+  const signup = useCallback(
+    async (input: { fullName: string; email: string; password: string }) => {
+      const user = await apiSignup(input);
+      setSession(user);
+    },
+    [],
+  );
+
   const signOut = useCallback(() => {
-    sessionStore.set(null);
+    setSession(null);
+    apiLogout().catch(() => {
+      /* cookie is best-effort cleared client-side regardless */
+    });
     router.push("/login");
   }, [router]);
 
   const value = useMemo(
-    () => ({ session, ready, signIn, signOut }),
-    [session, ready, signIn, signOut],
+    () => ({ session, ready, login, signup, signOut }),
+    [session, ready, login, signup, signOut],
   );
 
   return (

@@ -16,41 +16,75 @@ import { cn } from "../../lib/utils";
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-export default function LoginPage() {
-  const { session, ready, login } = useSession();
+function passwordIssue(password: string): string | undefined {
+  if (password.length === 0) return "Password is required";
+  if (password.length < 8) return "At least 8 characters";
+  if (!/[A-Za-z]/.test(password)) return "Add at least one letter";
+  if (!/\d/.test(password)) return "Add at least one number";
+  return undefined;
+}
+
+interface Touched {
+  fullName?: boolean;
+  email?: boolean;
+  password?: boolean;
+  confirmPassword?: boolean;
+}
+
+export default function SignupPage() {
+  const { session, ready, signup } = useSession();
   const router = useRouter();
 
+  const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [touched, setTouched] = useState<{ email?: boolean; password?: boolean }>({});
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [touched, setTouched] = useState<Touched>({});
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [emailTaken, setEmailTaken] = useState(false);
 
   useEffect(() => {
     if (ready && session) router.replace("/");
   }, [ready, session, router]);
 
-  const emailError =
-    touched.email && !EMAIL_PATTERN.test(email.trim())
-      ? "Enter a valid email address"
-      : undefined;
-  const passwordError =
-    touched.password && password.length === 0 ? "Password is required" : undefined;
+  const nameError = touched.fullName && fullName.trim().length === 0 ? "Name is required" : undefined;
+  const emailFormatError =
+    touched.email && !EMAIL_PATTERN.test(email.trim()) ? "Enter a valid email address" : undefined;
+  const emailError = emailFormatError ?? (emailTaken ? "Email is already registered" : undefined);
+  const passwordError = touched.password ? passwordIssue(password) : undefined;
+  const confirmError =
+    touched.confirmPassword && confirmPassword !== password ? "Passwords don't match" : undefined;
 
-  const valid = EMAIL_PATTERN.test(email.trim()) && password.length > 0;
+  const valid =
+    fullName.trim().length > 0 &&
+    EMAIL_PATTERN.test(email.trim()) &&
+    passwordIssue(password) === undefined &&
+    confirmPassword === password;
+
+  function markTouched(field: keyof Touched) {
+    setTouched((t) => ({ ...t, [field]: true }));
+  }
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
-    setTouched({ email: true, password: true });
+    setTouched({ fullName: true, email: true, password: true, confirmPassword: true });
     setFormError(null);
+    setEmailTaken(false);
     if (!valid || submitting) return;
 
     setSubmitting(true);
     try {
-      await login({ email: email.trim(), password });
+      await signup({ fullName: fullName.trim(), email: email.trim(), password });
       router.replace("/");
     } catch (error) {
-      setFormError(error instanceof ApiError ? error.message : "Something went wrong. Please try again.");
+      if (error instanceof ApiError && error.status === 409) {
+        setEmailTaken(true);
+      } else if (error instanceof ApiError) {
+        setFormError(error.message);
+      } else {
+        setFormError("Something went wrong. Please try again.");
+      }
     } finally {
       setSubmitting(false);
     }
@@ -61,7 +95,7 @@ export default function LoginPage() {
       {/* Form */}
       <div className="relative flex flex-col px-5 py-6 sm:px-8 lg:px-12">
         <div className="flex items-center justify-between">
-          <Brand href="/login" />
+          <Brand href="/signup" />
           <ThemeToggle />
         </div>
 
@@ -72,12 +106,12 @@ export default function LoginPage() {
           className="mx-auto flex w-full max-w-sm flex-1 flex-col justify-center py-10"
         >
           <motion.div variants={riseItem}>
-            <p className="eyebrow">Sign in</p>
+            <p className="eyebrow">Create an account</p>
             <h1 className="mt-3 text-[26px] font-semibold leading-tight tracking-tight text-ink sm:text-3xl">
-              Ask your database a question.
+              Start asking questions in plain English.
             </h1>
             <p className="mt-2 text-sm text-muted">
-              Sign in to open your workspace.
+              Takes a minute. No credit card.
             </p>
           </motion.div>
 
@@ -97,25 +131,50 @@ export default function LoginPage() {
             )}
 
             <Field
-              id="login-email"
+              id="signup-name"
+              label="Name"
+              value={fullName}
+              onChange={setFullName}
+              onBlur={() => markTouched("fullName")}
+              autoComplete="name"
+              placeholder="Ada Lovelace"
+              error={nameError}
+              disabled={submitting}
+            />
+            <Field
+              id="signup-email"
               label="Email"
               type="email"
               value={email}
-              onChange={setEmail}
-              onBlur={() => setTouched((t) => ({ ...t, email: true }))}
+              onChange={(value) => {
+                setEmail(value);
+                setEmailTaken(false);
+              }}
+              onBlur={() => markTouched("email")}
               autoComplete="email"
               placeholder="ada@example.com"
               error={emailError}
               disabled={submitting}
             />
             <PasswordField
-              id="login-password"
+              id="signup-password"
               label="Password"
               value={password}
               onChange={setPassword}
-              onBlur={() => setTouched((t) => ({ ...t, password: true }))}
-              autoComplete="current-password"
+              onBlur={() => markTouched("password")}
+              autoComplete="new-password"
               error={passwordError}
+              hint={passwordError ? undefined : "8+ characters, with a letter and a number"}
+              disabled={submitting}
+            />
+            <PasswordField
+              id="signup-confirm-password"
+              label="Confirm password"
+              value={confirmPassword}
+              onChange={setConfirmPassword}
+              onBlur={() => markTouched("confirmPassword")}
+              autoComplete="new-password"
+              error={confirmError}
               disabled={submitting}
             />
 
@@ -130,7 +189,7 @@ export default function LoginPage() {
                 "disabled:pointer-events-none disabled:opacity-40",
               )}
             >
-              {submitting ? "Signing in…" : "Sign in"}
+              {submitting ? "Creating account…" : "Create account"}
               {!submitting && (
                 <ArrowRight className="h-4 w-4 transition-transform duration-200 group-hover:translate-x-0.5" />
               )}
@@ -138,9 +197,9 @@ export default function LoginPage() {
           </motion.form>
 
           <motion.p variants={riseItem} className="mt-8 border-t border-line pt-4 text-sm text-muted">
-            Don&apos;t have an account?{" "}
-            <Link href="/signup" className="font-medium text-ink underline-offset-4 hover:underline">
-              Sign up
+            Already have an account?{" "}
+            <Link href="/login" className="font-medium text-ink underline-offset-4 hover:underline">
+              Sign in
             </Link>
           </motion.p>
         </motion.div>
