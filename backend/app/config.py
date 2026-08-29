@@ -22,6 +22,12 @@ class Settings(BaseSettings):
     session_cookie_name: str = "sqlharness_session"
     session_ttl_days: int = 30
 
+    # Base64, must decode to 32 bytes (AES-256). See app/crypto.py.
+    connection_encryption_key: str = ""
+    # Dev-only escape hatch so "fire demo query" can reach your own localhost
+    # Postgres. Leave false anywhere the backend isn't fully trusted.
+    allow_private_connection_hosts: bool = False
+
     @property
     def cors_origins_list(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]

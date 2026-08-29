@@ -1,6 +1,6 @@
 "use client";
 
-import { Eye, EyeOff } from "lucide-react";
+import { ChevronDown, Eye, EyeOff } from "lucide-react";
 import { useId, useState } from "react";
 import { cn } from "../../lib/utils";
 
@@ -56,6 +56,79 @@ export function Field({
             : "border-line focus:border-line-strong",
         )}
       />
+      {error ? (
+        <p id={errorId} className="text-xs text-red-500">
+          {error}
+        </p>
+      ) : hint ? (
+        <p className="text-xs text-muted">{hint}</p>
+      ) : null}
+    </div>
+  );
+}
+
+export function SelectField({
+  id,
+  label,
+  value,
+  onChange,
+  onBlur,
+  options,
+  placeholder,
+  error,
+  hint,
+  disabled,
+}: {
+  id: string;
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  onBlur?: () => void;
+  options: { value: string; label: string }[];
+  placeholder?: string;
+  error?: string;
+  hint?: string;
+  disabled?: boolean;
+}) {
+  const errorId = useId();
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <label htmlFor={id} className="eyebrow">
+        {label}
+      </label>
+      <div className="relative">
+        <select
+          id={id}
+          value={value}
+          disabled={disabled}
+          aria-invalid={error ? true : undefined}
+          aria-describedby={error ? errorId : undefined}
+          onChange={(event) => onChange(event.target.value)}
+          onBlur={onBlur}
+          className={cn(
+            "h-11 w-full appearance-none rounded-lg border bg-surface px-3.5 pr-9 text-sm",
+            "outline-none transition-colors",
+            "disabled:pointer-events-none disabled:opacity-60",
+            value ? "text-ink" : "text-muted",
+            error
+              ? "border-red-500/70 focus:border-red-500"
+              : "border-line focus:border-line-strong",
+          )}
+        >
+          {placeholder && (
+            <option value="" disabled>
+              {placeholder}
+            </option>
+          )}
+          {options.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+        <ChevronDown className="pointer-events-none absolute right-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
+      </div>
       {error ? (
         <p id={errorId} className="text-xs text-red-500">
           {error}

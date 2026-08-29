@@ -13,6 +13,8 @@ from uuid import UUID
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from .security import hash_token
+
 FAILED_LOGIN_LIMIT = 5
 LOCKOUT_MINUTES = 15
 
@@ -126,7 +128,8 @@ async def get_session_by_token_hash(session: AsyncSession, token_hash: bytes) ->
     result = await session.execute(
         text(
             """
-            SELECT s.id AS session_id, u.id, u.email, u.full_name, u.created_at
+            SELECT s.id AS session_id, u.id, u.email, u.full_name, u.created_at,
+                   u.last_tenant_id AS tenant_id
             FROM sessions s
             JOIN users u ON u.id = s.user_id
             WHERE s.refresh_token_hash = :token_hash
@@ -138,6 +141,21 @@ async def get_session_by_token_hash(session: AsyncSession, token_hash: bytes) ->
         {"token_hash": token_hash},
     )
     return result.mappings().first()
+
+
+async def resolve_active_session(session: AsyncSession, raw_token: str | None) -> Any | None:
+    """Look up the session for a cookie value and bump its last_seen_at.
+
+    Returns None (without touching anything) when there's no token or no
+    matching, live session. Caller is responsible for committing.
+    """
+    if not raw_token:
+        return None
+    row = await get_session_by_token_hash(session, hash_token(raw_token))
+    if row is None:
+        return None
+    await touch_session(session, row["session_id"])
+    return row
 
 
 async def touch_session(session: AsyncSession, session_id: UUID) -> None:

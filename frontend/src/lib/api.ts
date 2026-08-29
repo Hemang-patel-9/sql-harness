@@ -131,3 +131,162 @@ export async function getCurrentUser(): Promise<AuthUser | null> {
   if (!res.ok) throw await parseApiError(res);
   return toAuthUser(await res.json());
 }
+
+export type DbEngine = "postgresql" | "mysql";
+export type SslMode = "disable" | "require";
+export type ConnectionStatus = "untested" | "connected" | "failed";
+
+export interface Connection {
+  id: string;
+  label: string;
+  engine: DbEngine;
+  host: string;
+  port: number;
+  databaseName: string;
+  username: string;
+  sslMode: SslMode;
+  status: ConnectionStatus;
+  lastTestedAt: string | null;
+  lastTestOk: boolean | null;
+  lastTestDetail: string | null;
+  createdAt: string;
+}
+
+export interface ConnectionTestResult {
+  ok: boolean;
+  detail: string;
+  currentUser: string | null;
+  currentDatabase: string | null;
+  tableCount: number | null;
+  latencyMs: number | null;
+}
+
+interface ConnectionPayload {
+  id: string;
+  label: string;
+  engine: DbEngine;
+  host: string;
+  port: number;
+  database_name: string;
+  username: string;
+  ssl_mode: SslMode;
+  status: ConnectionStatus;
+  last_tested_at: string | null;
+  last_test_ok: boolean | null;
+  last_test_detail: string | null;
+  created_at: string;
+}
+
+function toConnection(payload: ConnectionPayload): Connection {
+  return {
+    id: payload.id,
+    label: payload.label,
+    engine: payload.engine,
+    host: payload.host,
+    port: payload.port,
+    databaseName: payload.database_name,
+    username: payload.username,
+    sslMode: payload.ssl_mode,
+    status: payload.status,
+    lastTestedAt: payload.last_tested_at,
+    lastTestOk: payload.last_test_ok,
+    lastTestDetail: payload.last_test_detail,
+    createdAt: payload.created_at,
+  };
+}
+
+export async function listConnections(): Promise<Connection[]> {
+  const res = await fetch(`${API_BASE_URL}/api/connections`, {
+    credentials: "include",
+  });
+  if (!res.ok) throw await parseApiError(res);
+  const payload: ConnectionPayload[] = await res.json();
+  return payload.map(toConnection);
+}
+
+export async function createConnection(input: {
+  label: string;
+  engine: DbEngine;
+  host: string;
+  port: number;
+  databaseName: string;
+  username: string;
+  password: string;
+  sslMode: SslMode;
+}): Promise<Connection> {
+  const res = await fetch(`${API_BASE_URL}/api/connections`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      label: input.label,
+      engine: input.engine,
+      host: input.host,
+      port: input.port,
+      database_name: input.databaseName,
+      username: input.username,
+      password: input.password,
+      ssl_mode: input.sslMode,
+    }),
+  });
+  if (!res.ok) throw await parseApiError(res);
+  return toConnection(await res.json());
+}
+
+export async function updateConnection(
+  id: string,
+  input: {
+    label: string;
+    engine: DbEngine;
+    host: string;
+    port: number;
+    databaseName: string;
+    username: string;
+    /** Omit (or leave undefined) to keep the currently stored password. */
+    password?: string;
+    sslMode: SslMode;
+  },
+): Promise<Connection> {
+  const res = await fetch(`${API_BASE_URL}/api/connections/${id}`, {
+    method: "PATCH",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      label: input.label,
+      engine: input.engine,
+      host: input.host,
+      port: input.port,
+      database_name: input.databaseName,
+      username: input.username,
+      ...(input.password ? { password: input.password } : {}),
+      ssl_mode: input.sslMode,
+    }),
+  });
+  if (!res.ok) throw await parseApiError(res);
+  return toConnection(await res.json());
+}
+
+export async function deleteConnection(id: string): Promise<void> {
+  const res = await fetch(`${API_BASE_URL}/api/connections/${id}`, {
+    method: "DELETE",
+    credentials: "include",
+  });
+  if (!res.ok) throw await parseApiError(res);
+}
+
+export async function testConnection(id: string): Promise<ConnectionTestResult> {
+  const res = await fetch(`${API_BASE_URL}/api/connections/${id}/test`, {
+    method: "POST",
+    credentials: "include",
+  });
+  if (!res.ok) throw await parseApiError(res);
+  const payload = await res.json();
+  return {
+    ok: payload.ok,
+    detail: payload.detail,
+    currentUser: payload.current_user,
+    currentDatabase: payload.current_database,
+    tableCount: payload.table_count,
+    latencyMs: payload.latency_ms,
+  };
+}

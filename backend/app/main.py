@@ -6,7 +6,9 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from . import db
 from .config import get_settings
+from .crypto import EncryptionKeyError, ensure_encryption_key_configured
 from .routes_auth import router as auth_router
+from .routes_connections import router as connections_router
 from .schemas import DbHealthResponse, HealthResponse, QueryRequest, QueryResponse
 from .services import generate_sql
 
@@ -16,7 +18,8 @@ log = logging.getLogger("uvicorn.error")
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    """Refuse to serve without a database: reaching it is a startup precondition."""
+    """Refuse to serve without a database or a valid encryption key: both are
+    startup preconditions, not things to discover at first use."""
     try:
         await db.ping()
     except Exception as exc:
@@ -28,6 +31,14 @@ async def lifespan(_: FastAPI):
         ) from exc
 
     log.info("Connected to PostgreSQL at %s", db.safe_url())
+
+    try:
+        ensure_encryption_key_configured()
+    except EncryptionKeyError as exc:
+        await db.dispose()
+        log.error("Connection encryption key is not configured: %s", exc)
+        raise RuntimeError(str(exc)) from exc
+
     yield
     await db.dispose()
 
@@ -45,6 +56,7 @@ app.add_middleware(
 )
 
 app.include_router(auth_router)
+app.include_router(connections_router)
 
 
 @app.get("/", response_model=HealthResponse)

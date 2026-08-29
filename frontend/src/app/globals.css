@@ -22,6 +22,8 @@
   --wash: rgb(224 147 11 / 0.12);
   --wash-strong: rgb(224 147 11 / 0.26);
   --danger: #b42318;
+  --success: #15803d;
+  --success-wash: rgb(21 128 61 / 0.1);
 }
 
 .dark {
@@ -37,6 +39,8 @@
   --wash: rgb(245 184 65 / 0.14);
   --wash-strong: rgb(245 184 65 / 0.24);
   --danger: #f97066;
+  --success: #4ade80;
+  --success-wash: rgb(74 222 128 / 0.12);
 }
 
 @theme inline {
@@ -52,6 +56,8 @@
   --color-wash: var(--wash);
   --color-wash-strong: var(--wash-strong);
   --color-danger: var(--danger);
+  --color-success: var(--success);
+  --color-success-wash: var(--success-wash);
 
   --font-sans: var(--font-instrument-sans), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-plex-mono), ui-monospace, "SFMono-Regular", monospace;

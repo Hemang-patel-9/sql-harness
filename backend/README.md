@@ -102,6 +102,7 @@ ALTER TABLE tenants     ENABLE ROW LEVEL SECURITY;
 ALTER TABLE memberships ENABLE ROW LEVEL SECURITY;
 ALTER TABLE invitations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE auth_events ENABLE ROW LEVEL SECURITY;
+ALTER TABLE connections ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY tenant_isolation ON tenants
   USING (id = current_tenant_id());
@@ -111,11 +112,47 @@ CREATE POLICY tenant_isolation ON invitations
   USING (tenant_id = current_tenant_id()) WITH CHECK (tenant_id = current_tenant_id());
 CREATE POLICY tenant_isolation ON auth_events
   USING (tenant_id = current_tenant_id()) WITH CHECK (tenant_id = current_tenant_id());
+CREATE POLICY tenant_isolation ON connections
+  USING (tenant_id = current_tenant_id()) WITH CHECK (tenant_id = current_tenant_id());
 ```
 
 `users`, `sessions` and `user_tokens` stay outside RLS on purpose: they are
 global identity, and login happens before a tenant is known.
 
-Every future tenant-owned table (queries, saved queries, connections, schema
-snapshots) takes the same shape: `tenant_id uuid NOT NULL REFERENCES tenants(id)
-ON DELETE CASCADE`, an index leading with `tenant_id`, and a matching policy.
+Every future tenant-owned table (queries, saved queries, schema snapshots)
+takes the same shape: `tenant_id uuid NOT NULL REFERENCES tenants(id) ON
+DELETE CASCADE`, an index leading with `tenant_id`, and a matching policy —
+`connections` (below) is the first example of the pattern in use.
+
+## Connections
+
+`/api/connections/*` (`app/routes_connections.py`) lets a signed-in user
+register a Postgres or MySQL database and test reaching it:
+
+- Passwords are encrypted, not hashed — see `app/crypto.py`. AES-256-GCM
+  with a server-held key (`CONNECTION_ENCRYPTION_KEY` in `.env`, base64,
+  must decode to 32 bytes), AAD bound to `tenant_id:connection_id` so a
+  copied ciphertext can't be decrypted under a different row. Generate a
+  key with:
+
+  ```bash
+  python -c "import os,base64;print(base64.b64encode(os.urandom(32)).decode())"
+  ```
+
+  The app refuses to start without a valid key, the same way it refuses to
+  start without a reachable database.
+- `POST /api/connections/{id}/test` ("fire demo query") opens a real,
+  short-lived connection to the target database (`app/db_probe.py`) and
+  runs a small info query (current user, current database, table count).
+  Before connecting, the target host is resolved and checked against
+  private/loopback/link-local/reserved ranges — connecting to internal
+  addresses is refused by default. Set `ALLOW_PRIVATE_CONNECTION_HOSTS=true`
+  in `.env` to lift that for local development (e.g. testing against your
+  own `localhost:5433` Postgres).
+- A connection's `password_ciphertext` is never selected into an API
+  response; there is no endpoint that returns it.
+- `PATCH /api/connections/{id}` edits a connection. Password is optional —
+  omit it (or send blank) to keep the one already stored, or send a new one
+  to replace it. Either way the edit resets `status` to `untested` and
+  clears the previous test result: a changed connection hasn't been proven
+  to work yet, so the UI asks for "fire demo query" again before trusting it.

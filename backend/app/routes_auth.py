@@ -37,15 +37,12 @@ def _clear_session_cookie(response: Response) -> None:
 async def get_current_user(
     request: Request, session: AsyncSession = Depends(get_session)
 ) -> UserResponse:
-    raw_token = request.cookies.get(settings.session_cookie_name)
-    if not raw_token:
+    row = await auth_repo.resolve_active_session(
+        session, request.cookies.get(settings.session_cookie_name)
+    )
+    if row is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not signed in")
 
-    row = await auth_repo.get_session_by_token_hash(session, hash_token(raw_token))
-    if row is None:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Session expired")
-
-    await auth_repo.touch_session(session, row["session_id"])
     await session.commit()
     return UserResponse(
         id=row["id"], email=row["email"], full_name=row["full_name"], created_at=row["created_at"]
