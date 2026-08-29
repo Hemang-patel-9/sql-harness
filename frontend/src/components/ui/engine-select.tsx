@@ -85,7 +85,7 @@ export function EngineSelect({
             "flex h-11 w-full items-center gap-2.5 rounded-lg border bg-surface px-3.5 text-sm",
             "outline-none transition-colors disabled:pointer-events-none disabled:opacity-60",
             error
-              ? "border-red-500/70 focus-visible:border-red-500"
+              ? "border-danger/70 focus-visible:border-danger"
               : open
                 ? "border-line-strong"
                 : "border-line hover:border-line-strong",
@@ -145,7 +145,7 @@ export function EngineSelect({
       </div>
 
       {error && (
-        <p id={errorId} className="text-xs text-red-500">
+        <p id={errorId} className="text-xs text-danger">
           {error}
         </p>
       )}

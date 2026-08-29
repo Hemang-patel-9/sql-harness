@@ -29,6 +29,10 @@ const PADDING = 56;
 const MIN_ZOOM = 0.2;
 const MAX_ZOOM = 2;
 
+/** The canvas ground. One dot per 20px module, scaled by the zoom. */
+const DOT_TILE =
+  "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20'%3E%3Ccircle cx='1' cy='1' r='1' fill='%237c8794' fill-opacity='0.5'/%3E%3C/svg%3E";
+
 function nonPrimaryIndexes(table: SchemaTable) {
   return table.indexes.filter((index) => !index.isPrimary);
 }
@@ -333,9 +337,13 @@ export function SchemaCanvas({ tables }: { tables: SchemaTable[] }) {
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerLeave={onPointerUp}
-        className="relative h-[60vh] min-h-[420px] cursor-grab overflow-hidden rounded-xl border border-line bg-paper active:cursor-grabbing"
+        className={cn(
+          "relative h-[60vh] min-h-[420px] cursor-grab overflow-hidden rounded-xl",
+          "border border-line bg-paper active:cursor-grabbing",
+          "[box-shadow:inset_0_2px_8px_rgb(12_18_24_/_0.07)]",
+        )}
         style={{
-          backgroundImage: "radial-gradient(var(--line) 1px, transparent 1px)",
+          backgroundImage: `url("${DOT_TILE}")`,
           backgroundSize: `${20 * zoom}px ${20 * zoom}px`,
           backgroundPosition: `${pan.x}px ${pan.y}px`,
         }}
@@ -446,7 +454,8 @@ function TableCard({
     >
       <div
         className={cn(
-          "flex flex-col overflow-hidden rounded-lg border bg-surface shadow-sm transition-[opacity,border-color,box-shadow] duration-200",
+          "flex flex-col overflow-hidden rounded-lg border bg-surface transition-[opacity,border-color,box-shadow] duration-200",
+          "[box-shadow:var(--elev-inset),var(--elev-2)]",
           selected ? "border-marker shadow-[0_0_0_1px_var(--marker)]" : "border-line hover:shadow-md",
           dimmed && "opacity-30",
         )}

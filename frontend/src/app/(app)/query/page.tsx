@@ -1,5 +1,5 @@
-import { QueryConsole } from "../../components/query-console";
-import { PageShell } from "../../components/ui/page-shell";
+import { QueryConsole } from "../../../components/query-console";
+import { PageShell } from "../../../components/ui/page-shell";
 
 export default function QueryPage() {
   return (

@@ -18,6 +18,7 @@ import {
 } from "../../../lib/api";
 import type { Connection, ConnectionTestResult } from "../../../lib/api";
 import { engineIcon } from "../../../components/ui/engine-select";
+import { Button } from "../../../components/ui/button";
 import { EmptyState, Panel, PageShell } from "../../../components/ui/page-shell";
 import { Modal } from "../../../components/ui/modal";
 import { ConnectionForm } from "./connection-form";
@@ -119,23 +120,16 @@ export function ConnectionsClient() {
       title="Connections"
       description="Databases this workspace can query. Credentials are encrypted at rest and only decrypted in memory to test a connection."
       actions={
-        <button
-          type="button"
-          onClick={() => setFormModal({ mode: "create" })}
-          className={cn(
-            "inline-flex h-9 items-center gap-1.5 rounded-lg bg-ink px-3.5 text-sm font-medium text-paper",
-            "transition-[opacity,transform] duration-150 hover:opacity-90 active:scale-[0.97]",
-          )}
-        >
+        <Button onClick={() => setFormModal({ mode: "create" })}>
           <Plus className="h-4 w-4" />
           Add connection
-        </button>
+        </Button>
       }
     >
       {connections === null ? (
         <p className="text-sm text-muted">Loading connections…</p>
       ) : loadError ? (
-        <p className="text-sm text-red-500">{loadError}</p>
+        <p className="text-sm text-danger">{loadError}</p>
       ) : connections.length === 0 ? (
         <EmptyState
           icon={Plug}
@@ -153,17 +147,24 @@ export function ConnectionsClient() {
               const engine = engineIcon(connection.engine);
 
               return (
-                <li key={connection.id} className="flex flex-col gap-3 px-4 py-3.5">
+                <li
+                  key={connection.id}
+                  className="flex flex-col gap-3 px-4 py-3.5 transition-colors duration-150 hover:bg-surface-2/40"
+                >
                   <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-                    <span
-                      aria-hidden
-                      className={cn(
-                        "h-2 w-2 shrink-0 rounded-full",
-                        connection.status === "connected" && "bg-success",
-                        connection.status === "untested" && "bg-line-strong",
-                        connection.status === "failed" && "bg-danger",
+                    <span aria-hidden className="relative grid h-2 w-2 shrink-0 place-items-center">
+                      <span
+                        className={cn(
+                          "h-2 w-2 rounded-full",
+                          connection.status === "connected" && "bg-success",
+                          connection.status === "untested" && "bg-line-strong",
+                          connection.status === "failed" && "bg-danger",
+                        )}
+                      />
+                      {connection.status === "connected" && (
+                        <span className="pulse-ring absolute h-2 w-2 rounded-full bg-success" />
                       )}
-                    />
+                    </span>
 
                     <span className="min-w-0 flex-1">
                       <span className="block truncate font-mono text-[13px] font-medium text-ink">
@@ -211,18 +212,15 @@ export function ConnectionsClient() {
                       </span>
                     ) : (
                       <span className="flex shrink-0 items-center gap-1.5">
-                        <button
-                          type="button"
+                        <Button
+                          variant="secondary"
+                          size="sm"
                           onClick={() => setConfirmFireId(connection.id)}
                           disabled={isTesting}
-                          className={cn(
-                            "inline-flex h-8 items-center gap-1.5 rounded-lg bg-surface-2 px-3 text-xs font-medium text-ink-2",
-                            "transition-colors hover:bg-line hover:text-ink disabled:pointer-events-none disabled:opacity-60",
-                          )}
                         >
                           {isTesting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
                           {isTesting ? "Testing…" : "Fire demo query"}
-                        </button>
+                        </Button>
                         <button
                           type="button"
                           aria-label={`Edit ${connection.label}`}
@@ -235,7 +233,7 @@ export function ConnectionsClient() {
                           type="button"
                           aria-label={`Delete ${connection.label}`}
                           onClick={() => setConfirmDeleteId(connection.id)}
-                          className="grid h-8 w-8 place-items-center rounded-lg text-muted transition-colors hover:bg-red-500/10 hover:text-danger"
+                          className="grid h-8 w-8 place-items-center rounded-lg text-muted transition-colors hover:bg-danger/10 hover:text-danger"
                         >
                           <Trash2 className="h-3.5 w-3.5" />
                         </button>
@@ -249,7 +247,7 @@ export function ConnectionsClient() {
                     <div
                       className={cn(
                         "flex items-start gap-2 rounded-lg px-3 py-2 text-xs",
-                        result.ok ? "bg-success-wash text-success" : "bg-red-500/5 text-red-500",
+                        result.ok ? "bg-success-wash text-success" : "bg-danger/5 text-danger",
                       )}
                     >
                       {result.ok ? (
@@ -300,27 +298,18 @@ export function ConnectionsClient() {
             </p>
             <DemoQueryPreview engine={firingConnection.engine} />
             <div className="flex items-center justify-end gap-2 border-t border-line pt-4">
-              <button
-                type="button"
-                onClick={() => setConfirmFireId(null)}
-                className="text-sm font-medium text-muted transition-colors hover:text-ink"
-              >
+              <Button variant="ghost" onClick={() => setConfirmFireId(null)}>
                 Cancel
-              </button>
-              <button
-                type="button"
+              </Button>
+              <Button
                 onClick={() => {
                   const id = firingConnection.id;
                   setConfirmFireId(null);
                   fireDemoQuery(id);
                 }}
-                className={cn(
-                  "inline-flex h-9 items-center rounded-lg bg-ink px-4 text-sm font-medium text-paper",
-                  "transition-[opacity,transform] duration-150 hover:opacity-90 active:scale-[0.98]",
-                )}
               >
                 Run this query
-              </button>
+              </Button>
             </div>
           </div>
         )}

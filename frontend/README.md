@@ -1,8 +1,9 @@
 # Frontend — Next.js
 
 Next.js 16 (App Router) + TypeScript + Tailwind v4, with `motion` (Framer
-Motion) for animation, `lucide-react` for icons, and `next-themes` for the
-colour mode.
+Motion) for animation, `three` + `@react-three/fiber` for the one WebGL
+object on the landing page, `lucide-react` for icons, and `next-themes` for
+the colour mode.
 
 ## Run
 
@@ -24,17 +25,18 @@ frontend on another port, add it to `CORS_ORIGINS` in `backend/.env`.
 
 | Route          | What it is                                    |
 | -------------- | --------------------------------------------- |
+| `/`            | Public landing page — hero, 3D scene, sections |
 | `/login`       | Sign in (outside the app shell)               |
 | `/signup`      | Create an account (outside the app shell)     |
-| `/`            | Query — the NL→SQL console, calls the backend |
-| `/history`     | Past questions and the SQL they produced      |
+| `/query`       | Query — the NL→SQL console, calls the backend |
 | `/schema`      | Tables and columns in scope                   |
 | `/connections` | Databases the workspace can reach             |
 | `/settings`    | Colour mode and profile                       |
 
-Everything except `/login` and `/signup` renders inside `(app)/layout.tsx` →
-`AppShell`, which supplies the navbar and sidebar and redirects to `/login`
-when there is no session.
+`/`, `/login` and `/signup` are public. Everything else renders inside
+`(app)/layout.tsx` → `AppShell`, which supplies the navbar and sidebar and
+redirects to `/login` when there is no session. Signing in lands on
+`/query` — `APP_HOME` in `lib/nav.ts` is the single place that says so.
 
 ## Layout
 
@@ -42,24 +44,30 @@ when there is no session.
 src/
 ├── app/
 │   ├── layout.tsx          fonts, ThemeProvider, SessionProvider
-│   ├── globals.css         design tokens (light + dark), base styles
+│   ├── globals.css         design tokens (light + dark), depth, base styles
+│   ├── (marketing)/        the public landing page at /
 │   ├── login/page.tsx      sign-in
 │   ├── signup/page.tsx     account creation
 │   └── (app)/              route group that shares the app shell
 │       ├── layout.tsx
-│       └── page.tsx, history/, schema/, connections/, settings/
+│       └── query/, schema/, connections/, settings/
 ├── components/
 │   ├── app-shell.tsx       navbar + sidebar + session guard
-│   ├── navbar.tsx          brand, settings, notifications, theme, account
+│   ├── navbar.tsx          brand, notifications, theme, account
 │   ├── sidebar.tsx         collapsible rail (desktop) + drawer (mobile)
 │   ├── session-provider.tsx  loads /api/auth/me, exposes login/signup/signOut
 │   ├── query-console.tsx   the NL→SQL form
+│   ├── transcript.tsx      question types itself out, becomes SQL
+│   ├── login-aside.tsx     the panel beside the sign-in form
 │   ├── sql-block.tsx       monochrome SQL syntax emphasis
-│   └── ui/                 icon-button, dropdown, avatar, page-shell, field
+│   ├── marketing/          landing nav, hero, and the scroll sections
+│   ├── three/query-engine.tsx  the WebGL schema object
+│   └── ui/                 button, icon-button, dropdown, avatar, modal,
+│                           field, page-shell, reveal, tilt-card
 └── lib/
     ├── api.ts              backend client, incl. signup/login/logout/getCurrentUser
-    ├── nav.ts              the sidebar tabs
-    ├── motion.ts           shared transitions and variants
+    ├── nav.ts              the sidebar tabs and APP_HOME
+    ├── motion.ts           shared transitions, entrance and scroll variants
     ├── session.ts          sidebar preference store + the Session type
     └── store.ts            localStorage-backed useSyncExternalStore helpers
 ```
@@ -71,13 +79,38 @@ src/
   them under `.dark`. Tailwind exposes them as `bg-paper`, `text-ink`, and so
   on, so a component is written once and works in both modes.
 - **Amber is a marker, never a text colour.** It appears as the solid caret
-  (brand, active tab), a wash behind the active row, the unread dot, and
-  behind SQL literals. Everything else is a cool neutral.
+  (brand, active tab, focused composer), a wash behind the active row, the
+  unread dot, behind SQL literals, and on the active plate in the 3D scene.
+  Everything else is a cool neutral.
+- **Depth without a single gradient.** Three ingredients only: layered
+  shadows (`--elev-1/2/3`), a 1px lit top edge (`--edge`, applied through
+  `--elev-inset`), and pattern grounds — a dot field (`.dot-field`), an
+  engineering grid (`.grid-field`) and a film grain on `body::after`. The
+  card recipes `.panel`, `.panel-raised` and `.panel-float` combine them, so
+  elevation is chosen by name rather than re-typed as a shadow value. The
+  only `*-gradient()` calls in the codebase are `mask-image` falloffs, which
+  paint no colour.
 - **Two faces, two jobs.** Instrument Sans for prose and UI, IBM Plex Mono for
   identifiers, SQL, labels, and numbers.
 - **Motion is functional.** The active-tab caret travels between tabs with a
   shared `layoutId`; the sidebar animates its width; menus scale from their
-  own corner. `prefers-reduced-motion` is respected globally.
+  own corner. On the landing page, sections settle in as they scroll into
+  view (`ui/reveal.tsx`) and cards lean towards the pointer in real 3D
+  (`ui/tilt-card.tsx`, on a shared `.stage` perspective).
+  `prefers-reduced-motion` is respected globally, and both `Reveal` and
+  `TiltCard` render their plain final state under it.
+
+## The 3D scene
+
+`components/three/query-engine.tsx` is the only WebGL in the project: the
+schema as an object — a stack of discs for the database, thin plates for
+tables, curved lines for joins, and one amber signal travelling out to a
+different table every 1.75s. It is imported through `next/dynamic` with
+`ssr: false`, so it never reaches the server and never blocks the hero copy.
+Its palette is hex-duplicated from `globals.css` because a WebGL material
+cannot read a CSS custom property — if the tokens move, move those too. Under
+`prefers-reduced-motion` the canvas switches to `frameloop="demand"` and
+holds a single still frame.
 
 ## Session
 

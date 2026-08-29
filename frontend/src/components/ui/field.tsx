@@ -49,15 +49,16 @@ export function Field({
         onBlur={onBlur}
         className={cn(
           "h-11 rounded-lg border bg-surface px-3.5 text-sm text-ink",
-          "outline-none transition-colors placeholder:text-muted",
+          "[box-shadow:inset_0_1px_2px_rgb(12_18_24_/_0.05)]",
+          "transition-colors placeholder:text-muted",
           "disabled:pointer-events-none disabled:opacity-60",
           error
-            ? "border-red-500/70 focus:border-red-500"
+            ? "border-danger/70 focus:border-danger"
             : "border-line focus:border-line-strong",
         )}
       />
       {error ? (
-        <p id={errorId} className="text-xs text-red-500">
+        <p id={errorId} className="text-xs text-danger">
           {error}
         </p>
       ) : hint ? (
@@ -108,11 +109,12 @@ export function SelectField({
           onBlur={onBlur}
           className={cn(
             "h-11 w-full appearance-none rounded-lg border bg-surface px-3.5 pr-9 text-sm",
-            "outline-none transition-colors",
+            "[box-shadow:inset_0_1px_2px_rgb(12_18_24_/_0.05)]",
+            "transition-colors",
             "disabled:pointer-events-none disabled:opacity-60",
             value ? "text-ink" : "text-muted",
             error
-              ? "border-red-500/70 focus:border-red-500"
+              ? "border-danger/70 focus:border-danger"
               : "border-line focus:border-line-strong",
           )}
         >
@@ -130,7 +132,7 @@ export function SelectField({
         <ChevronDown className="pointer-events-none absolute right-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
       </div>
       {error ? (
-        <p id={errorId} className="text-xs text-red-500">
+        <p id={errorId} className="text-xs text-danger">
           {error}
         </p>
       ) : hint ? (
@@ -182,10 +184,11 @@ export function PasswordField({
           onBlur={onBlur}
           className={cn(
             "h-11 w-full rounded-lg border bg-surface px-3.5 pr-10 text-sm text-ink",
-            "outline-none transition-colors placeholder:text-muted",
+            "[box-shadow:inset_0_1px_2px_rgb(12_18_24_/_0.05)]",
+            "transition-colors placeholder:text-muted",
             "disabled:pointer-events-none disabled:opacity-60",
             error
-              ? "border-red-500/70 focus:border-red-500"
+              ? "border-danger/70 focus:border-danger"
               : "border-line focus:border-line-strong",
           )}
         />
@@ -200,7 +203,7 @@ export function PasswordField({
         </button>
       </div>
       {error ? (
-        <p id={errorId} className="text-xs text-red-500">
+        <p id={errorId} className="text-xs text-danger">
           {error}
         </p>
       ) : hint ? (

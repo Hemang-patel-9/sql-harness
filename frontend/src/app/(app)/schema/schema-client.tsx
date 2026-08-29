@@ -247,7 +247,7 @@ export function SchemaClient() {
       {connections === null ? (
         <SchemaLoadingSkeleton />
       ) : loadError ? (
-        <p className="text-sm text-red-500">{loadError}</p>
+        <p className="text-sm text-danger">{loadError}</p>
       ) : connectedConnections.length === 0 ? (
         <EmptyState
           icon={Plug}
@@ -264,7 +264,7 @@ export function SchemaClient() {
                 exit={{ opacity: 0, height: 0 }}
                 transition={ease}
                 style={{ overflow: "hidden" }}
-                className="flex items-start gap-2 rounded-lg bg-red-500/5 px-3 py-2.5 text-xs text-red-500"
+                className="flex items-start gap-2 rounded-lg bg-danger/5 px-3 py-2.5 text-xs text-danger"
               >
                 <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                 <span>{displayError}</span>

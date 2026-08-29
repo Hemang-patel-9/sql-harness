@@ -46,7 +46,7 @@ export function Modal({
             transition={{ duration: 0.15 }}
             onClick={onClose}
             aria-hidden
-            className="absolute inset-0 bg-ink/30 backdrop-blur-[2px]"
+            className="absolute inset-0 bg-ink/35 backdrop-blur-[3px]"
           />
 
           <motion.div
@@ -58,12 +58,11 @@ export function Modal({
             exit={{ opacity: 0, scale: 0.97, y: 8 }}
             transition={{ duration: 0.15 }}
             className={cn(
-              "relative max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-xl border border-line bg-surface",
-              "shadow-[0_1px_2px_rgb(16_21_27_/_0.04),0_24px_64px_-12px_rgb(16_21_27_/_0.28)]",
+              "panel-float relative max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-2xl",
               panelClassName,
             )}
           >
-            <div className="sticky top-0 z-10 flex items-center justify-between border-b border-line bg-surface px-4 py-3.5">
+            <div className="sticky top-0 z-10 flex items-center justify-between border-b border-line bg-surface/95 px-5 py-3.5 backdrop-blur-sm">
               <h2 className="text-sm font-semibold text-ink">{title}</h2>
               <button
                 type="button"
@@ -74,7 +73,7 @@ export function Modal({
                 <X className="h-4 w-4" />
               </button>
             </div>
-            <div className="p-4 sm:p-5">{children}</div>
+            <div className="p-5">{children}</div>
           </motion.div>
         </div>
       )}

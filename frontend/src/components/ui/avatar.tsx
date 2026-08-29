@@ -23,6 +23,7 @@ export function Avatar({
       className={cn(
         "grid shrink-0 place-items-center rounded-full bg-ink font-mono font-medium",
         "leading-none tracking-tight text-paper select-none",
+        "[box-shadow:inset_0_1px_0_rgb(255_255_255_/_0.18),var(--elev-1)]",
         className,
       )}
     >

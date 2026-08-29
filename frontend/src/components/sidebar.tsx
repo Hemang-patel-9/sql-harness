@@ -63,7 +63,7 @@ function SidebarNav({
                   "transition-colors duration-150",
                   collapsed ? "justify-center px-0" : "gap-3 px-3",
                   active
-                    ? "bg-wash text-ink"
+                    ? "bg-wash text-ink [box-shadow:inset_0_1px_0_var(--edge)]"
                     : "text-ink-2 hover:bg-surface-2 hover:text-ink",
                 )}
               >
@@ -109,9 +109,9 @@ function SidebarNav({
                 <span
                   role="tooltip"
                   className={cn(
-                    "pointer-events-none absolute left-[calc(100%+0.5rem)] top-1/2 z-50",
-                    "-translate-y-1/2 scale-95 whitespace-nowrap rounded-md border border-line",
-                    "bg-surface px-2 py-1 text-xs text-ink opacity-0 shadow-lg",
+                    "panel-float pointer-events-none absolute left-[calc(100%+0.55rem)] top-1/2 z-50",
+                    "-translate-y-1/2 scale-95 whitespace-nowrap rounded-lg",
+                    "px-2.5 py-1.5 text-xs text-ink opacity-0",
                     "transition duration-150 group-hover:scale-100 group-hover:opacity-100",
                     "group-focus-visible:scale-100 group-focus-visible:opacity-100",
                   )}
@@ -146,6 +146,7 @@ export function DesktopSidebar({
       className={cn(
         "sticky top-14 hidden h-[calc(100dvh-3.5rem)] shrink-0 flex-col",
         "border-r border-line bg-surface md:flex",
+        "[box-shadow:1px_0_0_var(--edge)]",
       )}
     >
       <SidebarNav collapsed={collapsed} caretId="nav-caret-desktop" />
@@ -232,7 +233,7 @@ export function MobileSidebar({
             exit={{ opacity: 0 }}
             transition={{ duration: 0.2 }}
             onClick={onClose}
-            className="fixed inset-0 z-50 bg-ink/25 backdrop-blur-[2px]"
+            className="fixed inset-0 z-50 bg-ink/30 backdrop-blur-[3px]"
           />
 
           <motion.aside
@@ -245,7 +246,7 @@ export function MobileSidebar({
             transition={springSoft}
             className={cn(
               "fixed inset-y-0 left-0 z-50 flex w-[min(17rem,82vw)] flex-col",
-              "border-r border-line bg-surface",
+              "border-r border-line bg-surface [box-shadow:var(--elev-3)]",
             )}
           >
             <div className="flex h-14 shrink-0 items-center justify-between border-b border-line px-3">

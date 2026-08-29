@@ -9,9 +9,12 @@ export interface NavItem {
   blurb: string;
 }
 
+/** Where the app opens once you are signed in. `/` is the public page. */
+export const APP_HOME = "/query";
+
 export const NAV_ITEMS: NavItem[] = [
   {
-    href: "/",
+    href: APP_HOME,
     label: "Query",
     icon: Terminal,
     blurb: "Ask a question, read the SQL",

@@ -193,7 +193,7 @@ export function ConnectionForm({
   return (
     <form onSubmit={submit} noValidate className="flex flex-col gap-4">
       {formError && (
-        <p role="alert" className="rounded-lg border border-red-500/30 bg-red-500/5 px-3.5 py-2.5 text-sm text-red-500">
+        <p role="alert" className="rounded-lg border border-danger/30 bg-danger/5 px-3.5 py-2.5 text-sm text-danger">
           {formError}
         </p>
       )}

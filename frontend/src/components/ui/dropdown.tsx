@@ -97,9 +97,8 @@ export function Dropdown({
             exit="exit"
             style={{ transformOrigin: "top right" }}
             className={cn(
-              "absolute right-0 top-[calc(100%+0.5rem)] z-50 overflow-hidden",
-              "rounded-xl border border-line bg-surface",
-              "shadow-[0_1px_2px_rgb(16_21_27_/_0.04),0_12px_32px_-8px_rgb(16_21_27_/_0.14)]",
+              "panel-float absolute right-0 top-[calc(100%+0.5rem)] z-50 overflow-hidden",
+              "rounded-xl",
               panelClassName ?? "w-64",
             )}
           >
@@ -136,7 +135,7 @@ export function DropdownItem({
       }}
       className={cn(
         "flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm",
-        "transition-colors hover:bg-surface-2",
+        "transition-colors duration-150 hover:bg-surface-2",
         destructive ? "text-danger" : "text-ink-2 hover:text-ink",
       )}
     >

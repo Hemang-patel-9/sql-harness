@@ -29,7 +29,7 @@ export default function SettingsPage() {
       title="Settings"
       description="Appearance and account details."
     >
-      <div className="flex flex-col gap-3">
+      <div className="flex flex-col gap-4">
         <AppearancePanel />
         {session && <ProfilePanel session={session} />}
       </div>
@@ -58,7 +58,7 @@ function AppearancePanel() {
         <div
           role="radiogroup"
           aria-label="Colour mode"
-          className="flex gap-1 rounded-lg border border-line bg-paper p-1"
+          className="flex gap-1 rounded-lg border border-line bg-surface-2 p-1 [box-shadow:inset_0_1px_2px_rgb(12_18_24_/_0.05)]"
         >
           {THEMES.map((option) => {
             const selected = mounted && resolvedTheme === option.value;
@@ -80,7 +80,7 @@ function AppearancePanel() {
                   <motion.span
                     layoutId="theme-pill"
                     transition={spring}
-                    className="absolute inset-0 rounded-md bg-surface shadow-sm"
+                    className="absolute inset-0 rounded-md bg-surface [box-shadow:var(--elev-inset),var(--elev-1)]"
                   />
                 )}
                 <Icon className="relative h-3.5 w-3.5" />
