@@ -3,11 +3,12 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from . import auth as auth_repo
-from .config import get_settings
-from .db import get_session
+from ..core.config import get_settings
+from ..core.db import get_session
+from ..core.security import hash_password, hash_token, new_session_token, verify_password
+from . import repo as auth_repo
+from .dependencies import get_current_user
 from .schemas import LoginRequest, SignupRequest, UserResponse
-from .security import hash_password, hash_token, new_session_token, verify_password
 
 settings = get_settings()
 
@@ -32,21 +33,6 @@ def _set_session_cookie(response: Response, token: str) -> None:
 
 def _clear_session_cookie(response: Response) -> None:
     response.delete_cookie(key=settings.session_cookie_name, path="/")
-
-
-async def get_current_user(
-    request: Request, session: AsyncSession = Depends(get_session)
-) -> UserResponse:
-    row = await auth_repo.resolve_active_session(
-        session, request.cookies.get(settings.session_cookie_name)
-    )
-    if row is None:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not signed in")
-
-    await session.commit()
-    return UserResponse(
-        id=row["id"], email=row["email"], full_name=row["full_name"], created_at=row["created_at"]
-    )
 
 
 @router.post("/signup", response_model=UserResponse, status_code=status.HTTP_201_CREATED)

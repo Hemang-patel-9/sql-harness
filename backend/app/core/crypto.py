@@ -1,6 +1,6 @@
 """Reversible encryption for connection secrets.
 
-Unlike user passwords (security.py, one-way bcrypt), a connection's
+Unlike user passwords (core/security.py, one-way bcrypt), a connection's
 password has to be recoverable so the app can actually open the connection
 later. AES-256-GCM with a server-held key, AAD-bound to the row it belongs
 to so a copied ciphertext can't be decrypted under a different connection.

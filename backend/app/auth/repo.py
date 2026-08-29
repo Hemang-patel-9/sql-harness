@@ -1,6 +1,6 @@
 """Auth data access: raw SQL over the tables in schema.sql.
 
-Mirrors the style of db.py/services.py - no ORM models, just parameterized
+Mirrors the style of core/db.py - no ORM models, just parameterized
 `text()` queries against the schema that already exists.
 """
 
@@ -13,7 +13,7 @@ from uuid import UUID
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .security import hash_token
+from ..core.security import hash_token
 
 FAILED_LOGIN_LIMIT = 5
 LOCKOUT_MINUTES = 15

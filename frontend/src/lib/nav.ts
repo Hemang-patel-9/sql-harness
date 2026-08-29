@@ -1,4 +1,4 @@
-import { Database, History, Plug, Terminal } from "lucide-react";
+import { Database, Plug, Terminal } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 export interface NavItem {
@@ -15,12 +15,6 @@ export const NAV_ITEMS: NavItem[] = [
     label: "Query",
     icon: Terminal,
     blurb: "Ask a question, read the SQL",
-  },
-  {
-    href: "/history",
-    label: "History",
-    icon: History,
-    blurb: "Everything you have asked",
   },
   {
     href: "/schema",

@@ -290,3 +290,175 @@ export async function testConnection(id: string): Promise<ConnectionTestResult> 
     latencyMs: payload.latency_ms,
   };
 }
+
+export interface SchemaColumn {
+  name: string;
+  dataType: string;
+  nullable: boolean;
+  default: string | null;
+  ordinalPosition: number;
+  maxLength: number | null;
+  numericPrecision: number | null;
+  numericScale: number | null;
+  isPrimaryKey: boolean;
+  isForeignKey: boolean;
+}
+
+export interface SchemaForeignKey {
+  constraintName: string;
+  columns: string[];
+  referencedTable: string;
+  referencedColumns: string[];
+  onUpdate: string | null;
+  onDelete: string | null;
+}
+
+export interface SchemaIndex {
+  name: string;
+  columns: string[];
+  isUnique: boolean;
+  isPrimary: boolean;
+}
+
+export interface SchemaTable {
+  schemaName: string | null;
+  name: string;
+  tableType: string;
+  approxRowCount: number | null;
+  columns: SchemaColumn[];
+  primaryKey: string[];
+  foreignKeys: SchemaForeignKey[];
+  indexes: SchemaIndex[];
+}
+
+export interface SchemaQuery {
+  label: string;
+  sql: string;
+}
+
+export interface SchemaSnapshot {
+  connectionId: string;
+  engine: DbEngine;
+  fetchedAt: string;
+  tableCount: number;
+  columnCount: number;
+  tables: SchemaTable[];
+  queries: SchemaQuery[];
+}
+
+export interface SchemaFetchResult {
+  ok: boolean;
+  detail: string;
+  latencyMs: number | null;
+  snapshot: SchemaSnapshot | null;
+}
+
+function toSchemaSnapshot(payload: {
+  connection_id: string;
+  engine: DbEngine;
+  fetched_at: string;
+  table_count: number;
+  column_count: number;
+  tables: Array<{
+    schema_name: string | null;
+    name: string;
+    table_type: string;
+    approx_row_count: number | null;
+    columns: Array<{
+      name: string;
+      data_type: string;
+      nullable: boolean;
+      default: string | null;
+      ordinal_position: number;
+      max_length: number | null;
+      numeric_precision: number | null;
+      numeric_scale: number | null;
+      is_primary_key: boolean;
+      is_foreign_key: boolean;
+    }>;
+    primary_key: string[];
+    foreign_keys: Array<{
+      constraint_name: string;
+      columns: string[];
+      referenced_table: string;
+      referenced_columns: string[];
+      on_update: string | null;
+      on_delete: string | null;
+    }>;
+    indexes: Array<{
+      name: string;
+      columns: string[];
+      is_unique: boolean;
+      is_primary: boolean;
+    }>;
+  }>;
+  queries: SchemaQuery[];
+}): SchemaSnapshot {
+  return {
+    connectionId: payload.connection_id,
+    engine: payload.engine,
+    fetchedAt: payload.fetched_at,
+    tableCount: payload.table_count,
+    columnCount: payload.column_count,
+    queries: payload.queries,
+    tables: payload.tables.map((table) => ({
+      schemaName: table.schema_name,
+      name: table.name,
+      tableType: table.table_type,
+      approxRowCount: table.approx_row_count,
+      primaryKey: table.primary_key,
+      columns: table.columns.map((column) => ({
+        name: column.name,
+        dataType: column.data_type,
+        nullable: column.nullable,
+        default: column.default,
+        ordinalPosition: column.ordinal_position,
+        maxLength: column.max_length,
+        numericPrecision: column.numeric_precision,
+        numericScale: column.numeric_scale,
+        isPrimaryKey: column.is_primary_key,
+        isForeignKey: column.is_foreign_key,
+      })),
+      foreignKeys: table.foreign_keys.map((fk) => ({
+        constraintName: fk.constraint_name,
+        columns: fk.columns,
+        referencedTable: fk.referenced_table,
+        referencedColumns: fk.referenced_columns,
+        onUpdate: fk.on_update,
+        onDelete: fk.on_delete,
+      })),
+      indexes: table.indexes.map((index) => ({
+        name: index.name,
+        columns: index.columns,
+        isUnique: index.is_unique,
+        isPrimary: index.is_primary,
+      })),
+    })),
+  };
+}
+
+/** The persisted snapshot from the last "Fetch schema" run, or null if there isn't one yet. */
+export async function getSchemaSnapshot(connectionId: string): Promise<SchemaSnapshot | null> {
+  const res = await fetch(`${API_BASE_URL}/api/connections/${connectionId}/schema`, {
+    credentials: "include",
+  });
+  if (res.status === 404) return null;
+  if (!res.ok) throw await parseApiError(res);
+  return toSchemaSnapshot(await res.json());
+}
+
+/** Connects with the stored credentials and reads tables/columns/foreign-keys/indexes. */
+export async function fetchSchema(connectionId: string): Promise<SchemaFetchResult> {
+  const res = await fetch(`${API_BASE_URL}/api/connections/${connectionId}/schema/fetch`, {
+    method: "POST",
+    credentials: "include",
+  });
+  if (!res.ok) throw await parseApiError(res);
+  const payload = await res.json();
+  return {
+    ok: payload.ok,
+    detail: payload.detail,
+    latencyMs: payload.latency_ms,
+    snapshot: payload.snapshot ? toSchemaSnapshot(payload.snapshot) : null,
+  };
+}

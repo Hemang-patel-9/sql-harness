@@ -1,10 +1,17 @@
-"""Connections data access: raw SQL, mirroring auth.py's style."""
+"""Connections data access: raw SQL, mirroring auth/repo.py's style."""
 
 from typing import Any
 from uuid import UUID
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
+
+
+def build_aad(tenant_id: UUID, connection_id: UUID) -> bytes:
+    """AES-GCM additional authenticated data for a connection's stored
+    password (core/crypto.py) - binds the ciphertext to this exact row so it
+    can't be decrypted under a different connection or tenant."""
+    return f"{tenant_id}:{connection_id}".encode("utf-8")
 
 
 async def list_connections(session: AsyncSession, tenant_id: UUID) -> list[Any]:

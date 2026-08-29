@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     session_cookie_name: str = "sqlharness_session"
     session_ttl_days: int = 30
 
-    # Base64, must decode to 32 bytes (AES-256). See app/crypto.py.
+    # Base64, must decode to 32 bytes (AES-256). See app/core/crypto.py.
     connection_encryption_key: str = ""
     # Dev-only escape hatch so "fire demo query" can reach your own localhost
     # Postgres. Leave false anywhere the backend isn't fully trusted.

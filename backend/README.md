@@ -1,5 +1,24 @@
 # Backend — FastAPI
 
+## Project layout
+
+Feature-based packages under `app/`, plus `core/` for cross-cutting concerns.
+Each feature package owns its own `routes.py` (FastAPI router), `repo.py`
+(raw SQL data access), and `schemas.py` (Pydantic models); add whatever else
+a given feature needs (`connections/probe.py`, `schema_explorer/introspect.py`).
+A new module follows the same shape: a package under `app/`, wired into
+`app/main.py` with `app.include_router(...)`.
+
+```
+app/
+  core/             # config, db session, password/token hashing, secret encryption
+  auth/              # signup/login/session cookies
+  connections/       # customer DB connections: CRUD, "fire demo query"
+  schema_explorer/   # introspects a connection's tables/columns/FKs/indexes
+  query/             # NL-to-SQL translation (stub today)
+  main.py            # assembles the FastAPI app from the packages above
+```
+
 ## Setup
 
 ```bash
@@ -34,6 +53,8 @@ uvicorn app.main:app --reload --port 8000
 | POST   | `/api/auth/login`  | Sign in                               |
 | POST   | `/api/auth/logout` | Revoke the current session            |
 | GET    | `/api/auth/me`     | Current signed-in user                |
+| GET    | `/api/connections/{id}/schema` | Last-fetched schema snapshot for a connection |
+| POST   | `/api/connections/{id}/schema/fetch` | Connect and read tables/columns/foreign-keys/indexes |
 
 `POST /api/query` body:
 
@@ -41,15 +62,15 @@ uvicorn app.main:app --reload --port 8000
 { "question": "Show all users who signed up last week" }
 ```
 
-The translation logic lives in `app/services.py` — replace the stub with a real
-model/LLM call.
+The translation logic lives in `app/query/service.py` — replace the stub with a
+real model/LLM call.
 
 ## Auth
 
-`/api/auth/*` (`app/routes_auth.py`) is a real signup/login flow against the
+`/api/auth/*` (`app/auth/routes.py`) is a real signup/login flow against the
 `users`/`sessions`/`tenants`/`memberships` tables in `schema.sql`:
 
-- Passwords are hashed with bcrypt (`app/security.py`); never stored or
+- Passwords are hashed with bcrypt (`app/core/security.py`); never stored or
   logged in plaintext.
 - Sessions are an opaque random token handed to the browser as an httpOnly,
   `SameSite=Lax` cookie (`sqlharness_session`); only its sha256 hash is
@@ -82,7 +103,7 @@ psql -h localhost -p 5433 -U postgres -d nl2sql -f schema.sql
 It is re-runnable (`IF NOT EXISTS` throughout). Multi-tenancy is shared-schema
 with a `tenant_id` discriminator: `users` is a global identity, `memberships`
 links a user to a tenant and carries the role. Connection plumbing lives in
-`app/db.py` (`get_session` for plain requests, `tenant_session` to pin a
+`app/core/db.py` (`get_session` for plain requests, `tenant_session` to pin a
 transaction to one tenant for row-level security).
 
 ### Row-level security (optional, not enabled)
@@ -126,10 +147,10 @@ DELETE CASCADE`, an index leading with `tenant_id`, and a matching policy —
 
 ## Connections
 
-`/api/connections/*` (`app/routes_connections.py`) lets a signed-in user
+`/api/connections/*` (`app/connections/routes.py`) lets a signed-in user
 register a Postgres or MySQL database and test reaching it:
 
-- Passwords are encrypted, not hashed — see `app/crypto.py`. AES-256-GCM
+- Passwords are encrypted, not hashed — see `app/core/crypto.py`. AES-256-GCM
   with a server-held key (`CONNECTION_ENCRYPTION_KEY` in `.env`, base64,
   must decode to 32 bytes), AAD bound to `tenant_id:connection_id` so a
   copied ciphertext can't be decrypted under a different row. Generate a
@@ -142,8 +163,8 @@ register a Postgres or MySQL database and test reaching it:
   The app refuses to start without a valid key, the same way it refuses to
   start without a reachable database.
 - `POST /api/connections/{id}/test` ("fire demo query") opens a real,
-  short-lived connection to the target database (`app/db_probe.py`) and
-  runs a small info query (current user, current database, table count).
+  short-lived connection to the target database (`app/connections/probe.py`)
+  and runs a small info query (current user, current database, table count).
   Before connecting, the target host is resolved and checked against
   private/loopback/link-local/reserved ranges — connecting to internal
   addresses is refused by default. Set `ALLOW_PRIVATE_CONNECTION_HOSTS=true`
@@ -156,3 +177,17 @@ register a Postgres or MySQL database and test reaching it:
   to replace it. Either way the edit resets `status` to `untested` and
   clears the previous test result: a changed connection hasn't been proven
   to work yet, so the UI asks for "fire demo query" again before trusting it.
+
+## Schema explorer
+
+`/api/connections/{id}/schema*` (`app/schema_explorer/`) reads a connected
+database's own catalog — tables, columns, foreign keys, and indexes (primary
+keys included) — using four read-only queries per engine (`introspect.py`).
+Fetching is only allowed once a connection's last test succeeded (`status =
+'connected'`), enforced server-side as a 400, not just hidden in the UI.
+
+The result is persisted in `schema_snapshots` (one row per connection,
+upserted on every fetch — `repo.py`), so `GET /api/connections/{id}/schema`
+returns the last fetch instantly without re-connecting to the customer's
+database. `POST .../schema/fetch` re-runs the introspection and overwrites
+the stored snapshot.

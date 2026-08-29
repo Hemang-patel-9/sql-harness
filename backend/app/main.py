@@ -3,17 +3,26 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 
-from . import db
-from .config import get_settings
-from .crypto import EncryptionKeyError, ensure_encryption_key_configured
-from .routes_auth import router as auth_router
-from .routes_connections import router as connections_router
-from .schemas import DbHealthResponse, HealthResponse, QueryRequest, QueryResponse
-from .services import generate_sql
-
+from .auth.routes import router as auth_router
+from .connections.routes import router as connections_router
+from .core import db
+from .core.config import get_settings
+from .core.crypto import EncryptionKeyError, ensure_encryption_key_configured
+from .query.routes import router as query_router
+from .schema_explorer.routes import router as schema_router
 
 log = logging.getLogger("uvicorn.error")
+
+
+class HealthResponse(BaseModel):
+    status: str = "ok"
+
+
+class DbHealthResponse(BaseModel):
+    connected: bool
+    detail: str | None = None
 
 
 @asynccontextmanager
@@ -57,6 +66,8 @@ app.add_middleware(
 
 app.include_router(auth_router)
 app.include_router(connections_router)
+app.include_router(schema_router)
+app.include_router(query_router)
 
 
 @app.get("/", response_model=HealthResponse)
@@ -77,8 +88,3 @@ async def health_db() -> DbHealthResponse:
     except Exception as exc:  # noqa: BLE001 - surfaced verbatim for local debugging
         return DbHealthResponse(connected=False, detail=str(exc))
     return DbHealthResponse(connected=True)
-
-
-@app.post("/api/query", response_model=QueryResponse)
-def query(payload: QueryRequest) -> QueryResponse:
-    return generate_sql(payload)

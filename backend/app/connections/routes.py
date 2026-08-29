@@ -1,15 +1,14 @@
-from dataclasses import dataclass
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from . import auth as auth_repo
-from . import connections_repo
-from .config import get_settings
-from .crypto import decrypt_secret, encrypt_secret
-from .db import get_session
-from .db_probe import probe_connection
+from ..auth.dependencies import Principal, get_current_principal
+from ..core.config import get_settings
+from ..core.crypto import decrypt_secret, encrypt_secret
+from ..core.db import get_session
+from . import repo as connections_repo
+from .probe import probe_connection
 from .schemas import (
     ConnectionCreateRequest,
     ConnectionResponse,
@@ -20,32 +19,6 @@ from .schemas import (
 settings = get_settings()
 
 router = APIRouter(prefix="/api/connections", tags=["connections"])
-
-
-@dataclass
-class Principal:
-    user_id: UUID
-    tenant_id: UUID
-
-
-async def get_current_principal(
-    request: Request, session: AsyncSession = Depends(get_session)
-) -> Principal:
-    row = await auth_repo.resolve_active_session(
-        session, request.cookies.get(settings.session_cookie_name)
-    )
-    if row is None:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not signed in")
-    if row["tenant_id"] is None:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="This account has no workspace"
-        )
-    await session.commit()
-    return Principal(user_id=row["id"], tenant_id=row["tenant_id"])
-
-
-def _aad(tenant_id: UUID, connection_id: UUID) -> bytes:
-    return f"{tenant_id}:{connection_id}".encode("utf-8")
 
 
 @router.get("", response_model=list[ConnectionResponse])
@@ -65,7 +38,7 @@ async def create_connection(
 ) -> ConnectionResponse:
     connection_id = uuid4()
     ciphertext = encrypt_secret(
-        payload.password, aad=_aad(principal.tenant_id, connection_id)
+        payload.password, aad=connections_repo.build_aad(principal.tenant_id, connection_id)
     )
 
     row = await connections_repo.create_connection(
@@ -96,7 +69,7 @@ async def update_connection(
     ciphertext = None
     if payload.password is not None:
         ciphertext = encrypt_secret(
-            payload.password, aad=_aad(principal.tenant_id, connection_id)
+            payload.password, aad=connections_repo.build_aad(principal.tenant_id, connection_id)
         )
 
     row = await connections_repo.update_connection(
@@ -143,7 +116,8 @@ async def test_connection(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Connection not found")
 
     password = decrypt_secret(
-        row["password_ciphertext"], aad=_aad(principal.tenant_id, connection_id)
+        row["password_ciphertext"],
+        aad=connections_repo.build_aad(principal.tenant_id, connection_id),
     )
 
     result = await probe_connection(
