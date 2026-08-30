@@ -1,6 +1,7 @@
 import { ArrowLeft, ArrowRight, Hash, KeyRound, Link2 } from "lucide-react";
-import type { NormalizedTable } from "../../../lib/api";
+import type { DocumentListItem, NormalizedTable, TableDocument } from "../../../lib/api";
 import { cn } from "../../../lib/utils";
+import { IngestDocumentPanel } from "./ingest-document-panel";
 
 function Group({
   label,
@@ -27,7 +28,19 @@ function Group({
 /** The exact {table, columns, relationships, indexes} shape stored in
  * schema_objects.normalized_json, rendered for a human to check before it
  * feeds a later description-generation step. */
-export function IngestTablePreview({ table }: { table: NormalizedTable }) {
+export function IngestTablePreview({
+  table,
+  connectionId,
+  listItem,
+  tableDocument,
+  onDocumentChange,
+}: {
+  table: NormalizedTable;
+  connectionId: string;
+  listItem: DocumentListItem | undefined;
+  tableDocument: TableDocument | undefined;
+  onDocumentChange: (doc: TableDocument) => void;
+}) {
   return (
     <div className="divide-y-0">
       <Group label="Columns" count={table.columns.length}>
@@ -102,6 +115,16 @@ export function IngestTablePreview({ table }: { table: NormalizedTable }) {
           </ul>
         )}
       </Group>
+
+      <IngestDocumentPanel
+        key={`${connectionId}:${table.table}`}
+        connectionId={connectionId}
+        schemaName={listItem?.schemaName ?? null}
+        tableName={table.table}
+        listItem={listItem}
+        cached={tableDocument}
+        onChange={onDocumentChange}
+      />
     </div>
   );
 }

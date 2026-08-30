@@ -11,6 +11,7 @@ API (and the UI) can show the caller exactly what will run, before it runs.
 
 import asyncio
 import itertools
+import re
 import ssl as ssl_lib
 import time
 from dataclasses import dataclass, field
@@ -30,6 +31,18 @@ class QuerySpec:
     sql: str
 
 
+_MYSQL_ENUM_RE = re.compile(r"^enum\((.*)\)$", re.IGNORECASE | re.DOTALL)
+
+
+def _mysql_enum_values(column_type: str) -> list[str] | None:
+    """MySQL reports enums as `enum('a','b')` in one string; Postgres reports
+    the labels separately, so both engines end up with the same shape."""
+    match = _MYSQL_ENUM_RE.match(column_type.strip())
+    if match is None:
+        return None
+    return [value.strip().strip("'").replace("''", "'") for value in match.group(1).split("','")]
+
+
 @dataclass
 class ColumnResult:
     name: str
@@ -40,6 +53,7 @@ class ColumnResult:
     max_length: int | None
     numeric_precision: int | None
     numeric_scale: int | None
+    enum_values: list[str] | None = None
 
 
 @dataclass
@@ -101,21 +115,32 @@ WHERE c.relkind IN ('r', 'v', 'm')
   AND n.nspname NOT LIKE 'pg_toast%'
 ORDER BY n.nspname, c.relname;"""
 
+# data_type reports 'USER-DEFINED' for enums, so fall back to udt_name and
+# pull the allowed labels: which values a column accepts is exactly what a
+# question like "orders that failed" needs to become a correct WHERE clause.
 _PG_COLUMNS_SQL = """\
 SELECT
-    table_schema,
-    table_name,
-    column_name,
-    ordinal_position,
-    data_type,
-    is_nullable,
-    column_default,
-    character_maximum_length,
-    numeric_precision,
-    numeric_scale
-FROM information_schema.columns
-WHERE table_schema NOT IN ('pg_catalog', 'information_schema')
-ORDER BY table_schema, table_name, ordinal_position;"""
+    c.table_schema,
+    c.table_name,
+    c.column_name,
+    c.ordinal_position,
+    CASE WHEN c.data_type = 'USER-DEFINED' THEN c.udt_name ELSE c.data_type END AS data_type,
+    e.enum_values,
+    c.is_nullable,
+    c.column_default,
+    c.character_maximum_length,
+    c.numeric_precision,
+    c.numeric_scale
+FROM information_schema.columns c
+LEFT JOIN LATERAL (
+    SELECT array_agg(en.enumlabel ORDER BY en.enumsortorder) AS enum_values
+    FROM pg_catalog.pg_type t
+    JOIN pg_catalog.pg_namespace n ON n.oid = t.typnamespace
+    JOIN pg_catalog.pg_enum en ON en.enumtypid = t.oid
+    WHERE t.typname = c.udt_name AND n.nspname = c.udt_schema
+) e ON true
+WHERE c.table_schema NOT IN ('pg_catalog', 'information_schema')
+ORDER BY c.table_schema, c.table_name, c.ordinal_position;"""
 
 _PG_FOREIGN_KEYS_SQL = """\
 SELECT
@@ -317,6 +342,7 @@ async def _introspect_postgres(
                 max_length=row["character_maximum_length"],
                 numeric_precision=row["numeric_precision"],
                 numeric_scale=row["numeric_scale"],
+                enum_values=list(row["enum_values"]) if row["enum_values"] else None,
             )
         )
 
@@ -408,6 +434,7 @@ async def _introspect_mysql(
                 max_length=row["character_maximum_length"],
                 numeric_precision=row["numeric_precision"],
                 numeric_scale=row["numeric_scale"],
+                enum_values=_mysql_enum_values(row["column_type"]),
             )
         )
 

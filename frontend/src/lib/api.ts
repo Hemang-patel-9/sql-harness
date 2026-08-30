@@ -302,6 +302,8 @@ export interface SchemaColumn {
   numericScale: number | null;
   isPrimaryKey: boolean;
   isForeignKey: boolean;
+  /** Allowed labels for an enum column; null for every other type. */
+  enumValues: string[] | null;
 }
 
 export interface SchemaForeignKey {
@@ -375,6 +377,7 @@ function toSchemaSnapshot(payload: {
       numeric_scale: number | null;
       is_primary_key: boolean;
       is_foreign_key: boolean;
+      enum_values: string[] | null;
     }>;
     primary_key: string[];
     foreign_keys: Array<{
@@ -418,6 +421,7 @@ function toSchemaSnapshot(payload: {
         numericScale: column.numeric_scale,
         isPrimaryKey: column.is_primary_key,
         isForeignKey: column.is_foreign_key,
+        enumValues: column.enum_values ?? null,
       })),
       foreignKeys: table.foreign_keys.map((fk) => ({
         constraintName: fk.constraint_name,
@@ -522,6 +526,7 @@ interface NormalizedTablePayload {
     numeric_scale: number | null;
     is_primary_key: boolean;
     is_foreign_key: boolean;
+    enum_values: string[] | null;
   }>;
   relationships: Array<{
     direction: RelationshipDirection;
@@ -550,6 +555,7 @@ function toNormalizedTable(payload: NormalizedTablePayload): NormalizedTable {
       numericScale: column.numeric_scale,
       isPrimaryKey: column.is_primary_key,
       isForeignKey: column.is_foreign_key,
+      enumValues: column.enum_values ?? null,
     })),
     relationships: payload.relationships.map((rel) => ({
       direction: rel.direction,
@@ -643,4 +649,176 @@ export async function getIngestStatus(connectionId: string): Promise<IngestResul
   if (res.status === 404) return null;
   if (!res.ok) throw await parseApiError(res);
   return toIngestResult(await res.json());
+}
+
+export type StaleReason = "schema_changed" | "document_changed";
+
+export interface TableDocument {
+  connectionId: string;
+  schemaName: string | null;
+  tableName: string;
+  document: string;
+  criticScore: number | null;
+  criticNotes: { missingInformation: string[]; suggestions: string[] } | null;
+  hasDocument: boolean;
+  isEmbedded: boolean;
+  isStale: boolean;
+  staleReason: StaleReason | null;
+  generatedAt: string | null;
+  editedAt: string | null;
+  embeddedAt: string | null;
+}
+
+export interface DocumentListItem {
+  schemaName: string | null;
+  tableName: string;
+  hasDocument: boolean;
+  isEmbedded: boolean;
+  isStale: boolean;
+  staleReason: StaleReason | null;
+  generatedAt: string | null;
+  embeddedAt: string | null;
+}
+
+function toTableDocument(payload: {
+  connection_id: string;
+  schema_name: string | null;
+  table_name: string;
+  document: string;
+  critic_score: number | null;
+  critic_notes: { missing_information: string[]; suggestions: string[] } | null;
+  has_document: boolean;
+  is_embedded: boolean;
+  is_stale: boolean;
+  stale_reason: StaleReason | null;
+  generated_at: string | null;
+  edited_at: string | null;
+  embedded_at: string | null;
+}): TableDocument {
+  return {
+    connectionId: payload.connection_id,
+    schemaName: payload.schema_name,
+    tableName: payload.table_name,
+    document: payload.document,
+    criticScore: payload.critic_score,
+    criticNotes: payload.critic_notes
+      ? {
+          missingInformation: payload.critic_notes.missing_information,
+          suggestions: payload.critic_notes.suggestions,
+        }
+      : null,
+    hasDocument: payload.has_document,
+    isEmbedded: payload.is_embedded,
+    isStale: payload.is_stale,
+    staleReason: payload.stale_reason,
+    generatedAt: payload.generated_at,
+    editedAt: payload.edited_at,
+    embeddedAt: payload.embedded_at,
+  };
+}
+
+function toDocumentListItem(payload: {
+  schema_name: string | null;
+  table_name: string;
+  has_document: boolean;
+  is_embedded: boolean;
+  is_stale: boolean;
+  stale_reason: StaleReason | null;
+  generated_at: string | null;
+  embedded_at: string | null;
+}): DocumentListItem {
+  return {
+    schemaName: payload.schema_name,
+    tableName: payload.table_name,
+    hasDocument: payload.has_document,
+    isEmbedded: payload.is_embedded,
+    isStale: payload.is_stale,
+    staleReason: payload.stale_reason,
+    generatedAt: payload.generated_at,
+    embeddedAt: payload.embedded_at,
+  };
+}
+
+/** `suffix` must be appended before the query string, not after it. */
+function documentPath(
+  connectionId: string,
+  tableName: string,
+  schemaName: string | null,
+  suffix = "",
+): string {
+  const base = `${API_BASE_URL}/api/connections/${connectionId}/documents/${encodeURIComponent(tableName)}${suffix}`;
+  return schemaName ? `${base}?schema_name=${encodeURIComponent(schemaName)}` : base;
+}
+
+/** Every table's document status for a connection - has a document, is it
+ * embedded, has the source schema or the document itself drifted since. */
+export async function listTableDocuments(connectionId: string): Promise<DocumentListItem[]> {
+  const res = await fetch(`${API_BASE_URL}/api/connections/${connectionId}/documents`, {
+    credentials: "include",
+  });
+  if (!res.ok) throw await parseApiError(res);
+  const payload: { documents: Parameters<typeof toDocumentListItem>[0][] } = await res.json();
+  return payload.documents.map(toDocumentListItem);
+}
+
+/** The current document for one table, or null if it's never been generated. */
+export async function getTableDocument(
+  connectionId: string,
+  tableName: string,
+  schemaName: string | null,
+): Promise<TableDocument | null> {
+  const res = await fetch(documentPath(connectionId, tableName, schemaName), { credentials: "include" });
+  if (res.status === 404) return null;
+  if (!res.ok) throw await parseApiError(res);
+  return toTableDocument(await res.json());
+}
+
+/** Runs the two-stage LLM pipeline and replaces any previous document for this table. */
+export async function generateTableDocument(
+  connectionId: string,
+  tableName: string,
+  schemaName: string | null,
+): Promise<TableDocument> {
+  const res = await fetch(documentPath(connectionId, tableName, schemaName, "/generate"), {
+    method: "POST",
+    credentials: "include",
+  });
+  if (!res.ok) throw await parseApiError(res);
+  return toTableDocument(await res.json());
+}
+
+export async function editTableDocument(
+  connectionId: string,
+  tableName: string,
+  schemaName: string | null,
+  document: string,
+): Promise<TableDocument> {
+  const res = await fetch(documentPath(connectionId, tableName, schemaName), {
+    method: "PATCH",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ document }),
+  });
+  if (!res.ok) throw await parseApiError(res);
+  return toTableDocument(await res.json());
+}
+
+export interface IngestDocumentResult {
+  qdrantPointId: string;
+  embeddedAt: string;
+}
+
+/** Embeds the document's current text and upserts it into Qdrant. */
+export async function ingestTableDocument(
+  connectionId: string,
+  tableName: string,
+  schemaName: string | null,
+): Promise<IngestDocumentResult> {
+  const res = await fetch(documentPath(connectionId, tableName, schemaName, "/ingest"), {
+    method: "POST",
+    credentials: "include",
+  });
+  if (!res.ok) throw await parseApiError(res);
+  const payload: { qdrant_point_id: string; embedded_at: string } = await res.json();
+  return { qdrantPointId: payload.qdrant_point_id, embeddedAt: payload.embedded_at };
 }

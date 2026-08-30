@@ -10,6 +10,8 @@ from .connections.routes import router as connections_router
 from .core import db
 from .core.config import get_settings
 from .core.crypto import EncryptionKeyError, ensure_encryption_key_configured
+from .doc_gen import anthropic_client, openai_client
+from .doc_gen.routes import router as doc_gen_router
 from .memory import client as mem0
 from .memory.routes import router as memory_router
 from .query.routes import router as query_router
@@ -68,10 +70,24 @@ async def lifespan(_: FastAPI):
     except Exception as exc:  # noqa: BLE001 - non-fatal, logged for visibility only
         log.warning("Mem0 not reachable: %s", exc)
 
+    try:
+        await openai_client.ping()
+        log.info("OpenAI reachable")
+    except Exception as exc:  # noqa: BLE001 - non-fatal, logged for visibility only
+        log.warning("OpenAI not reachable: %s", exc)
+
+    try:
+        await anthropic_client.ping()
+        log.info("Anthropic reachable")
+    except Exception as exc:  # noqa: BLE001 - non-fatal, logged for visibility only
+        log.warning("Anthropic not reachable: %s", exc)
+
     yield
     await db.dispose()
     await qdrant.dispose()
     await mem0.dispose()
+    await openai_client.dispose()
+    await anthropic_client.dispose()
 
 
 settings = get_settings()
@@ -93,6 +109,7 @@ app.include_router(schema_ingest_router)
 app.include_router(query_router)
 app.include_router(vectorstore_router)
 app.include_router(memory_router)
+app.include_router(doc_gen_router)
 
 
 @app.get("/", response_model=HealthResponse)

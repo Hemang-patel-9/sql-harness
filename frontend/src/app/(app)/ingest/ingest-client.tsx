@@ -6,9 +6,15 @@ import {
   ApiError,
   getIngestStatus,
   listIngestConnections,
+  listTableDocuments,
   processIngest,
 } from "../../../lib/api";
-import type { IngestConnectionSummary, IngestResult } from "../../../lib/api";
+import type {
+  DocumentListItem,
+  IngestConnectionSummary,
+  IngestResult,
+  TableDocument,
+} from "../../../lib/api";
 import { engineIcon } from "../../../components/ui/engine-select";
 import { Button, ButtonLink } from "../../../components/ui/button";
 import { EmptyState, Panel, PageShell } from "../../../components/ui/page-shell";
@@ -35,15 +41,22 @@ function ConnectionDetail({
   result,
   loading,
   error,
+  documentList,
+  documents,
+  onDocumentChange,
 }: {
   connectionId: string;
   result: IngestResult | undefined;
   loading: boolean;
   error: string | undefined;
+  documentList: DocumentListItem[] | undefined;
+  documents: Record<string, TableDocument> | undefined;
+  onDocumentChange: (tableName: string, doc: TableDocument) => void;
 }) {
   const [selectedTable, setSelectedTable] = useState<string | null>(null);
   const tables = result?.tables ?? [];
   const active = tables.find((t) => t.table === selectedTable) ?? tables[0] ?? null;
+  const listByTable = new Map((documentList ?? []).map((d) => [d.tableName, d]));
 
   if (loading) {
     return (
@@ -74,25 +87,48 @@ function ConnectionDetail({
   return (
     <div className="grid grid-cols-1 border-t border-line md:grid-cols-[200px_1fr]">
       <ul className="flex flex-col gap-0.5 border-b border-line p-2 md:border-b-0 md:border-r">
-        {tables.map((table) => (
-          <li key={table.table}>
-            <button
-              type="button"
-              onClick={() => setSelectedTable(table.table)}
-              className={cn(
-                "flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-left font-mono text-[12.5px] transition-colors",
-                active?.table === table.table
-                  ? "bg-surface-2 text-ink"
-                  : "text-ink-2 hover:bg-surface-2/60",
-              )}
-            >
-              <span className="truncate">{table.table}</span>
-              <span className="shrink-0 text-[10px] text-muted">{table.columns.length}c</span>
-            </button>
-          </li>
-        ))}
+        {tables.map((table) => {
+          const docStatus = listByTable.get(table.table);
+          return (
+            <li key={table.table}>
+              <button
+                type="button"
+                onClick={() => setSelectedTable(table.table)}
+                className={cn(
+                  "flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left font-mono text-[12.5px] transition-colors",
+                  active?.table === table.table
+                    ? "bg-surface-2 text-ink"
+                    : "text-ink-2 hover:bg-surface-2/60",
+                )}
+              >
+                <span
+                  className={cn(
+                    "h-1.5 w-1.5 shrink-0 rounded-full",
+                    docStatus?.isEmbedded && !docStatus.isStale
+                      ? "bg-success"
+                      : docStatus?.hasDocument
+                        ? "bg-marker"
+                        : "bg-line-strong",
+                  )}
+                />
+                <span className="truncate">{table.table}</span>
+                <span className="ml-auto shrink-0 text-[10px] text-muted">{table.columns.length}c</span>
+              </button>
+            </li>
+          );
+        })}
       </ul>
-      <div className="min-w-0">{active && <IngestTablePreview table={active} />}</div>
+      <div className="min-w-0">
+        {active && (
+          <IngestTablePreview
+            table={active}
+            connectionId={connectionId}
+            listItem={listByTable.get(active.table)}
+            tableDocument={documents?.[active.table]}
+            onDocumentChange={(doc) => onDocumentChange(active.table, doc)}
+          />
+        )}
+      </div>
     </div>
   );
 }
@@ -106,6 +142,8 @@ export function IngestClient() {
   const [detailResults, setDetailResults] = useState<Record<string, IngestResult>>({});
   const [detailLoadingId, setDetailLoadingId] = useState<string | null>(null);
   const [detailErrors, setDetailErrors] = useState<Record<string, string>>({});
+  const [documentLists, setDocumentLists] = useState<Record<string, DocumentListItem[]>>({});
+  const [documents, setDocuments] = useState<Record<string, Record<string, TableDocument>>>({});
 
   useEffect(() => {
     listIngestConnections()
@@ -132,8 +170,12 @@ export function IngestClient() {
       return next;
     });
     try {
-      const result = await getIngestStatus(connectionId);
+      const [result, documentList] = await Promise.all([
+        getIngestStatus(connectionId),
+        listTableDocuments(connectionId),
+      ]);
       if (result) setDetailResults((prev) => ({ ...prev, [connectionId]: result }));
+      setDocumentLists((prev) => ({ ...prev, [connectionId]: documentList }));
     } catch (err) {
       setDetailErrors((prev) => ({
         ...prev,
@@ -142,6 +184,31 @@ export function IngestClient() {
     } finally {
       setDetailLoadingId((current) => (current === connectionId ? null : current));
     }
+  }
+
+  function handleDocumentChange(connectionId: string, tableName: string, doc: TableDocument) {
+    setDocuments((prev) => ({
+      ...prev,
+      [connectionId]: { ...prev[connectionId], [tableName]: doc },
+    }));
+    setDocumentLists((prev) => {
+      const list = prev[connectionId] ?? [];
+      const exists = list.some((d) => d.tableName === tableName);
+      const item: DocumentListItem = {
+        schemaName: doc.schemaName,
+        tableName: doc.tableName,
+        hasDocument: doc.hasDocument,
+        isEmbedded: doc.isEmbedded,
+        isStale: doc.isStale,
+        staleReason: doc.staleReason,
+        generatedAt: doc.generatedAt,
+        embeddedAt: doc.embeddedAt,
+      };
+      return {
+        ...prev,
+        [connectionId]: exists ? list.map((d) => (d.tableName === tableName ? item : d)) : [...list, item],
+      };
+    });
   }
 
   async function runProcess(connection: IngestConnectionSummary) {
@@ -154,7 +221,18 @@ export function IngestClient() {
     });
     try {
       const result = await processIngest(id);
+      // Awaited, not fired-and-forgotten: the panel reads each table's
+      // schema_name off this list, and acting without it targets the wrong row.
+      const documentList = await listTableDocuments(id);
       setDetailResults((prev) => ({ ...prev, [id]: result }));
+      setDocumentLists((prev) => ({ ...prev, [id]: documentList }));
+      // Reprocessing can change a table's shape; drop cached documents so the
+      // panel refetches and picks up any new staleness.
+      setDocuments((prev) => {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
       setConnections((prev) =>
         prev?.map((c) =>
           c.connectionId === id
@@ -312,6 +390,11 @@ export function IngestClient() {
                       result={detailResults[connection.connectionId]}
                       loading={detailLoadingId === connection.connectionId}
                       error={detailErrors[connection.connectionId]}
+                      documentList={documentLists[connection.connectionId]}
+                      documents={documents[connection.connectionId]}
+                      onDocumentChange={(tableName, doc) =>
+                        handleDocumentChange(connection.connectionId, tableName, doc)
+                      }
                     />
                   )}
                 </li>

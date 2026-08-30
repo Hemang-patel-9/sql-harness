@@ -19,6 +19,7 @@ app/
   query/             # NL-to-SQL translation (stub today)
   vectorstore/        # Qdrant client + collection config (dense/sparse/filters; no retrieval yet)
   memory/             # Mem0 Cloud client (setup only; no add/search calls yet)
+  doc_gen/            # generates/reviews/embeds one retrieval document per table (dense-only)
   main.py            # assembles the FastAPI app from the packages above
 ```
 
@@ -63,6 +64,11 @@ uvicorn app.main:app --reload --port 8000
 | GET    | `/api/schema-ingest/connections` | Every connection's schema/ingest status |
 | GET    | `/api/connections/{id}/ingest` | Last "process" result for a connection |
 | POST   | `/api/connections/{id}/ingest` | Normalize the last-fetched schema into per-table rows |
+| GET    | `/api/connections/{id}/documents` | Every table's document status for a connection |
+| POST   | `/api/connections/{id}/documents/{table}/generate` | Run the two-stage LLM pipeline for one table |
+| GET    | `/api/connections/{id}/documents/{table}` | The current document for one table |
+| PATCH  | `/api/connections/{id}/documents/{table}` | Edit a table's document text |
+| POST   | `/api/connections/{id}/documents/{table}/ingest` | Embed and upsert the current document into Qdrant |
 
 `POST /api/query` body:
 
@@ -200,6 +206,15 @@ returns the last fetch instantly without re-connecting to the customer's
 database. `POST .../schema/fetch` re-runs the introspection and overwrites
 the stored snapshot.
 
+Enum columns carry their allowed values (`SchemaColumn.enum_values`). Postgres
+reports enums as `USER-DEFINED`, so the column query falls back to `udt_name`
+and aggregates the labels from `pg_enum`; MySQL states them inline in
+`column_type` (`enum('a','b')`) and they're parsed out to the same shape.
+Knowing a column only accepts `untested|connected|failed` is what lets a
+generated document — and later, a query — use those values correctly.
+Snapshots taken before this existed still load (the field defaults to null);
+re-fetch a connection's schema to pick the values up.
+
 ## Vector store (Qdrant)
 
 `app/vectorstore/` holds the Qdrant setup: connection plumbing and the
@@ -258,3 +273,38 @@ reasoning as Qdrant: nothing calls it yet, so a misconfigured or
 momentarily-down API shouldn't take the API down.
 
 `MEM0_API_KEY` is required, no default, same as the Qdrant settings above.
+
+## Table documents
+
+`app/doc_gen/` turns one `schema_objects` row into a retrieval-ready text
+document — `TABLE`/`COLUMNS`/`RELATIONSHIPS`/`CONSTRAINTS`/`INDEXES` are
+rendered deterministically in Python (`render.py`, zero tokens, zero
+hallucination risk); only `DESCRIPTION`/`BUSINESS TERMS`/`EXAMPLE QUESTIONS`
+go through a two-stage LLM pipeline:
+
+- **Schema Analyst** (`analyst.py`, OpenAI `gpt-4o-mini`) drafts those three
+  sections from the deterministic schema context — its real job is the
+  example questions ("what would a user ask that this table should answer").
+- **Retrieval Critic + Refiner** (`critic.py`, Anthropic
+  `claude-haiku-4-5-20251001`), one combined call — scores the draft,
+  lists what's missing/could improve, and returns refined sections.
+- `pipeline.py` orchestrates both and renders the final document.
+- `repo.py` stores the result in `schema_documents` (one row per table) —
+  only the rendered `document` text plus `critic_score`/`critic_notes`;
+  never the raw pre-critic draft or the three semantic fields separately.
+- `embed.py` embeds the current document text with OpenAI
+  `text-embedding-3-large` (full 3072 dims) and upserts a **dense-only**
+  point into the Qdrant collection — no sparse vector yet, matching
+  `app/vectorstore`'s "no retrieval strategy yet" scope.
+
+Every step is human-reviewable before the next: generate → edit (optional,
+`PATCH`) → explicit `ingest`. A document is flagged stale
+(`GET /api/connections/{id}/documents`) if the source table's structure
+changed since it was generated, or if it was edited/regenerated after it
+was last embedded — either way the live Qdrant point may no longer match.
+
+**No retrieval/search code exists yet** — `ingest` only upserts.
+
+OpenAI and Anthropic clients are pinged once at startup, non-fatal, same
+reasoning as Qdrant/Mem0. `OPENAI_API_KEY` and `ANTHROPIC_API_KEY` are
+required, no defaults, same pattern as the other integrations above.

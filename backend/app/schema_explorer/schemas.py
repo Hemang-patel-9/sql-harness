@@ -17,6 +17,8 @@ class SchemaColumn(BaseModel):
     numeric_scale: int | None
     is_primary_key: bool
     is_foreign_key: bool
+    # Defaulted so snapshots stored before enum support still validate.
+    enum_values: list[str] | None = None
 
 
 class SchemaForeignKey(BaseModel):

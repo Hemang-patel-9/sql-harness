@@ -37,6 +37,9 @@ class Settings(BaseSettings):
 
     mem0_api_key: str
 
+    openai_api_key: str
+    anthropic_api_key: str
+
     @property
     def cors_origins_list(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]

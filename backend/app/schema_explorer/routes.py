@@ -47,6 +47,7 @@ def _to_schema_table(table: TableResult) -> SchemaTable:
                 numeric_scale=col.numeric_scale,
                 is_primary_key=col.name in primary_key,
                 is_foreign_key=col.name in foreign_key_columns,
+                enum_values=col.enum_values,
             )
             for col in table.columns
         ],

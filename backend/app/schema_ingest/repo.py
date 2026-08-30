@@ -57,7 +57,7 @@ async def get_objects(session: AsyncSession, tenant_id: UUID, connection_id: UUI
     result = await session.execute(
         text(
             """
-            SELECT processed_at, table_name, normalized_json
+            SELECT processed_at, schema_name, table_name, normalized_json
             FROM schema_objects
             WHERE connection_id = :connection_id AND tenant_id = :tenant_id
             ORDER BY table_name
@@ -66,6 +66,28 @@ async def get_objects(session: AsyncSession, tenant_id: UUID, connection_id: UUI
         {"connection_id": connection_id, "tenant_id": tenant_id},
     )
     return list(result.mappings().all())
+
+
+async def get_object(
+    session: AsyncSession, tenant_id: UUID, connection_id: UUID, schema_name: str | None, table_name: str
+) -> Any | None:
+    result = await session.execute(
+        text(
+            """
+            SELECT processed_at, schema_name, table_name, normalized_json
+            FROM schema_objects
+            WHERE connection_id = :connection_id AND tenant_id = :tenant_id
+              AND schema_name IS NOT DISTINCT FROM :schema_name AND table_name = :table_name
+            """
+        ),
+        {
+            "connection_id": connection_id,
+            "tenant_id": tenant_id,
+            "schema_name": schema_name,
+            "table_name": table_name,
+        },
+    )
+    return result.mappings().first()
 
 
 async def list_ingest_summaries(session: AsyncSession, tenant_id: UUID) -> list[Any]:
