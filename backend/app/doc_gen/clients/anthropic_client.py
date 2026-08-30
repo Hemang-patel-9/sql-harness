@@ -4,7 +4,7 @@ from functools import lru_cache
 
 from anthropic import AsyncAnthropic
 
-from ..core.config import get_settings
+from ...core.config import get_settings
 
 
 @lru_cache

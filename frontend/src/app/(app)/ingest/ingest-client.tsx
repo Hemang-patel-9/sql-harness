@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertCircle, ChevronDown, Layers, Loader2 } from "lucide-react";
+import { AlertCircle, ChevronDown, Layers, Loader2, RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
 import {
   ApiError,
@@ -8,11 +8,14 @@ import {
   listIngestConnections,
   listTableDocuments,
   processIngest,
+  syncTableDocuments,
 } from "../../../lib/api";
 import type {
   DocumentListItem,
   IngestConnectionSummary,
   IngestResult,
+  SyncAction,
+  SyncResult,
   TableDocument,
 } from "../../../lib/api";
 import { engineIcon } from "../../../components/ui/engine-select";
@@ -34,6 +37,47 @@ function formatRelativeTime(iso: string): string {
 
 function SkeletonBlock({ className }: { className?: string }) {
   return <div className={cn("animate-pulse rounded-lg bg-surface-2", className)} />;
+}
+
+const SYNC_LABELS: Record<SyncAction, string> = {
+  generated: "generated",
+  regenerated: "regenerated",
+  embedded: "re-embedded",
+  unchanged: "unchanged",
+  skipped_edited: "left alone (edited by hand)",
+  failed: "failed",
+};
+
+const SYNC_ORDER: SyncAction[] = [
+  "generated",
+  "regenerated",
+  "embedded",
+  "unchanged",
+  "skipped_edited",
+  "failed",
+];
+
+function SyncSummary({ result }: { result: SyncResult }) {
+  const parts = SYNC_ORDER.filter((a) => (result.counts[a] ?? 0) > 0).map(
+    (a) => `${result.counts[a]} ${SYNC_LABELS[a]}`,
+  );
+  const attention = result.tables.filter(
+    (t) => t.action === "failed" || t.action === "skipped_edited",
+  );
+
+  return (
+    <div className="flex flex-col gap-1.5 rounded-lg bg-surface-2/60 px-3 py-2 text-xs">
+      <span className="font-mono text-ink-2">{parts.join(" · ") || "nothing to do"}</span>
+      {attention.map((t) => (
+        <span key={`${t.schemaName}.${t.tableName}`} className="flex items-start gap-2 text-muted">
+          <span className={cn("font-mono", t.action === "failed" ? "text-danger" : "text-marker")}>
+            {t.tableName}
+          </span>
+          <span>{t.detail}</span>
+        </span>
+      ))}
+    </div>
+  );
 }
 
 function ConnectionDetail({
@@ -144,6 +188,8 @@ export function IngestClient() {
   const [detailErrors, setDetailErrors] = useState<Record<string, string>>({});
   const [documentLists, setDocumentLists] = useState<Record<string, DocumentListItem[]>>({});
   const [documents, setDocuments] = useState<Record<string, Record<string, TableDocument>>>({});
+  const [syncingId, setSyncingId] = useState<string | null>(null);
+  const [syncResults, setSyncResults] = useState<Record<string, SyncResult>>({});
 
   useEffect(() => {
     listIngestConnections()
@@ -183,6 +229,37 @@ export function IngestClient() {
       }));
     } finally {
       setDetailLoadingId((current) => (current === connectionId ? null : current));
+    }
+  }
+
+  async function runSync(connectionId: string) {
+    setSyncingId(connectionId);
+    setProcessErrors((prev) => {
+      const next = { ...prev };
+      delete next[connectionId];
+      return next;
+    });
+    try {
+      const result = await syncTableDocuments(connectionId);
+      setSyncResults((prev) => ({ ...prev, [connectionId]: result }));
+      const documentList = await listTableDocuments(connectionId);
+      setDocumentLists((prev) => ({ ...prev, [connectionId]: documentList }));
+      // Cached bodies are stale for anything sync rewrote; drop them so the
+      // panel refetches whichever table is opened next.
+      setDocuments((prev) => {
+        const next = { ...prev };
+        delete next[connectionId];
+        return next;
+      });
+      setExpandedId(connectionId);
+      if (!detailResults[connectionId]) await loadDetail(connectionId);
+    } catch (err) {
+      setProcessErrors((prev) => ({
+        ...prev,
+        [connectionId]: err instanceof ApiError ? err.message : "Could not sync documents.",
+      }));
+    } finally {
+      setSyncingId((current) => (current === connectionId ? null : current));
     }
   }
 
@@ -288,8 +365,10 @@ export function IngestClient() {
             {connections.map((connection) => {
               const engine = engineIcon(connection.engine);
               const isProcessing = processingId === connection.connectionId;
+              const isSyncing = syncingId === connection.connectionId;
               const isExpanded = expandedId === connection.connectionId;
               const processError = processErrors[connection.connectionId];
+              const syncResult = syncResults[connection.connectionId];
 
               return (
                 <li key={connection.connectionId}>
@@ -359,6 +438,23 @@ export function IngestClient() {
                         )}
 
                         {connection.isProcessed && (
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            disabled={isSyncing || isProcessing}
+                            onClick={() => runSync(connection.connectionId)}
+                            title="Generate or embed only the tables that need it"
+                          >
+                            {isSyncing ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              <RefreshCw className="h-3.5 w-3.5" />
+                            )}
+                            {isSyncing ? "Syncing…" : "Sync documents"}
+                          </Button>
+                        )}
+
+                        {connection.isProcessed && (
                           <button
                             type="button"
                             aria-label={isExpanded ? "Collapse" : "Expand"}
@@ -382,6 +478,8 @@ export function IngestClient() {
                         <span>{processError}</span>
                       </div>
                     )}
+
+                    {syncResult && !isSyncing && <SyncSummary result={syncResult} />}
                   </div>
 
                   {isExpanded && (

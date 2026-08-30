@@ -1,5 +1,5 @@
-from ..schema_ingest.schemas import NormalizedRelationship, NormalizedTable, RelationshipDirection
-from .schemas import BusinessTerm
+from ...schema_ingest.schemas import NormalizedRelationship, NormalizedTable, RelationshipDirection
+from ..schemas import BusinessTerm
 
 _TYPE_DISPLAY = {
     "character varying": "VARCHAR",

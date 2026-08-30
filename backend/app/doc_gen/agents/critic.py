@@ -1,8 +1,8 @@
-from ..schema_ingest.schemas import NormalizedTable
-from . import anthropic_client
+from ...schema_ingest.schemas import NormalizedTable
+from ..clients import anthropic_client
+from ..clients.retry import with_retries
+from ..schemas import AnalystDraft, CriticRefinement
 from .prompts import CRITIC_SYSTEM, build_critic_prompt
-from .retry import with_retries
-from .schemas import AnalystDraft, CriticRefinement
 
 CRITIC_MODEL = "claude-haiku-4-5-20251001"
 

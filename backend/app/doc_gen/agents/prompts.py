@@ -1,13 +1,13 @@
 import json
 
-from ..schema_ingest.schemas import NormalizedTable
-from .render import (
+from ...schema_ingest.schemas import NormalizedTable
+from ..schemas import AnalystDraft
+from ..tools.render import (
     render_columns_block,
     render_constraints_block,
     render_indexes_block,
     render_relationships_block,
 )
-from .schemas import AnalystDraft
 
 ANALYST_SYSTEM = """You are a schema analyst preparing a database table for retrieval in a \
 natural-language-to-SQL system. Given a table's structure, your real job is to reason about \

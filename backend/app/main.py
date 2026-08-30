@@ -10,7 +10,7 @@ from .connections.routes import router as connections_router
 from .core import db
 from .core.config import get_settings
 from .core.crypto import EncryptionKeyError, ensure_encryption_key_configured
-from .doc_gen import anthropic_client, openai_client
+from .doc_gen.clients import anthropic_client, openai_client
 from .doc_gen.routes import router as doc_gen_router
 from .memory import client as mem0
 from .memory.routes import router as memory_router

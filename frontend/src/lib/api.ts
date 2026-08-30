@@ -803,6 +803,54 @@ export async function editTableDocument(
   return toTableDocument(await res.json());
 }
 
+export type SyncAction =
+  | "generated"
+  | "regenerated"
+  | "embedded"
+  | "unchanged"
+  | "skipped_edited"
+  | "failed";
+
+export interface SyncTableOutcome {
+  schemaName: string | null;
+  tableName: string;
+  action: SyncAction;
+  detail: string | null;
+}
+
+export interface SyncResult {
+  counts: Record<SyncAction, number>;
+  tables: SyncTableOutcome[];
+}
+
+/** Brings every table up to date, doing only the work each one needs —
+ * a table whose schema hasn't moved costs no LLM call and no embedding. */
+export async function syncTableDocuments(connectionId: string): Promise<SyncResult> {
+  const res = await fetch(`${API_BASE_URL}/api/connections/${connectionId}/documents/sync`, {
+    method: "POST",
+    credentials: "include",
+  });
+  if (!res.ok) throw await parseApiError(res);
+  const payload: {
+    counts: Record<SyncAction, number>;
+    tables: Array<{
+      schema_name: string | null;
+      table_name: string;
+      action: SyncAction;
+      detail: string | null;
+    }>;
+  } = await res.json();
+  return {
+    counts: payload.counts,
+    tables: payload.tables.map((t) => ({
+      schemaName: t.schema_name,
+      tableName: t.table_name,
+      action: t.action,
+      detail: t.detail,
+    })),
+  };
+}
+
 export interface IngestDocumentResult {
   qdrantPointId: string;
   embeddedAt: string;

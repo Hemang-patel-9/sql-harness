@@ -11,19 +11,80 @@ from ..connections import repo as connections_repo
 from ..core.db import get_session
 from ..schema_ingest import repo as ingest_repo
 from ..schema_ingest.schemas import NormalizedTable
-from . import embed, repo
+from . import repo
 from .pipeline import generate_document
 from .schemas import (
     DocumentListItem,
     DocumentListResponse,
     DocumentPatchRequest,
     IngestDocumentResponse,
+    SyncAction,
+    SyncResponse,
+    SyncTableOutcome,
     TableDocumentResponse,
 )
+from .tools import embed
 
 router = APIRouter(prefix="/api/connections/{connection_id}/documents", tags=["doc-gen"])
 
 _NO_DOCUMENT_DETAIL = "No document generated for this table yet."
+
+
+async def _generate_and_store(
+    session: AsyncSession,
+    *,
+    principal: Principal,
+    connection_id: UUID,
+    schema_name: str | None,
+    table_name: str,
+    normalized_json: dict,
+) -> None:
+    table = NormalizedTable.model_validate(normalized_json)
+    generated = await generate_document(table)
+    await repo.upsert_document(
+        session,
+        connection_id=connection_id,
+        tenant_id=principal.tenant_id,
+        schema_name=schema_name,
+        table_name=table_name,
+        document=generated.document,
+        source_hash=repo.compute_source_hash(normalized_json),
+        critic_score=generated.critic_score,
+        critic_notes=generated.critic_notes,
+        generated_by=principal.user_id,
+        generated_at=datetime.now(UTC),
+        qdrant_point_id=embed.point_id(connection_id, schema_name, table_name),
+    )
+
+
+async def _embed_and_mark(
+    session: AsyncSession,
+    *,
+    tenant_id: UUID,
+    connection_id: UUID,
+    schema_name: str | None,
+    table_name: str,
+    document: str,
+) -> tuple[UUID, datetime]:
+    vector = await embed.embed_text(document)
+    point_id = await embed.upsert_point(
+        tenant_id=tenant_id,
+        connection_id=connection_id,
+        schema_name=schema_name,
+        table_name=table_name,
+        document=document,
+        vector=vector,
+    )
+    embedded_at = datetime.now(UTC)
+    await repo.mark_embedded(
+        session,
+        tenant_id=tenant_id,
+        connection_id=connection_id,
+        schema_name=schema_name,
+        table_name=table_name,
+        embedded_at=embedded_at,
+    )
+    return point_id, embedded_at
 
 
 def _to_response(
@@ -110,25 +171,14 @@ async def generate(
         )
 
     normalized_json = ingest_repo.parse_json(obj["normalized_json"])
-    table = NormalizedTable.model_validate(normalized_json)
-    generated = await generate_document(table)
     source_hash = repo.compute_source_hash(normalized_json)
-    qdrant_point_id = embed.point_id(connection_id, schema_name, table_name)
-    generated_at = datetime.now(UTC)
-
-    await repo.upsert_document(
+    await _generate_and_store(
         session,
+        principal=principal,
         connection_id=connection_id,
-        tenant_id=principal.tenant_id,
         schema_name=schema_name,
         table_name=table_name,
-        document=generated.document,
-        source_hash=source_hash,
-        critic_score=generated.critic_score,
-        critic_notes=generated.critic_notes,
-        generated_by=principal.user_id,
-        generated_at=generated_at,
-        qdrant_point_id=qdrant_point_id,
+        normalized_json=normalized_json,
     )
     await session.commit()
 
@@ -219,23 +269,13 @@ async def ingest_document(
     if doc is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=_NO_DOCUMENT_DETAIL)
 
-    vector = await embed.embed_text(doc["document"])
-    point_id = await embed.upsert_point(
-        tenant_id=principal.tenant_id,
-        connection_id=connection_id,
-        schema_name=schema_name,
-        table_name=table_name,
-        document=doc["document"],
-        vector=vector,
-    )
-    embedded_at = datetime.now(UTC)
-    await repo.mark_embedded(
+    point_id, embedded_at = await _embed_and_mark(
         session,
         tenant_id=principal.tenant_id,
         connection_id=connection_id,
         schema_name=schema_name,
         table_name=table_name,
-        embedded_at=embedded_at,
+        document=doc["document"],
     )
     await session.commit()
 
@@ -246,3 +286,104 @@ async def ingest_document(
         qdrant_point_id=point_id,
         embedded_at=embedded_at,
     )
+
+
+@router.post("/sync", response_model=SyncResponse)
+async def sync_documents(
+    connection_id: UUID,
+    principal: Principal = Depends(get_current_principal),
+    session: AsyncSession = Depends(get_session),
+) -> SyncResponse:
+    """Brings every table up to date, doing only the work each one needs.
+
+    A table whose schema hasn't moved since its document was generated costs
+    nothing here - no LLM call, no embedding.
+    """
+    await _require_connection(session, principal.tenant_id, connection_id)
+
+    objects = await ingest_repo.get_objects(session, principal.tenant_id, connection_id)
+    docs = await repo.list_documents(session, principal.tenant_id, connection_id)
+    docs_by_key = {(d["schema_name"], d["table_name"]): d for d in docs}
+
+    outcomes: list[SyncTableOutcome] = []
+    for obj in objects:
+        schema_name, table_name = obj["schema_name"], obj["table_name"]
+        normalized_json = ingest_repo.parse_json(obj["normalized_json"])
+        live_hash = repo.compute_source_hash(normalized_json)
+        doc = docs_by_key.get((schema_name, table_name))
+
+        if doc is not None and doc["source_hash"] != live_hash and doc["edited_at"] is not None:
+            # A hand-edited document is the user's writing; regenerating would
+            # destroy it with no undo, so a moved schema is reported, not applied.
+            outcomes.append(
+                SyncTableOutcome(
+                    schema_name=schema_name,
+                    table_name=table_name,
+                    action=SyncAction.skipped_edited,
+                    detail="Edited by hand and the schema has since changed - regenerate to overwrite.",
+                )
+            )
+            continue
+
+        try:
+            if doc is None or doc["source_hash"] != live_hash:
+                await _generate_and_store(
+                    session,
+                    principal=principal,
+                    connection_id=connection_id,
+                    schema_name=schema_name,
+                    table_name=table_name,
+                    normalized_json=normalized_json,
+                )
+                fresh = await repo.get_document(
+                    session, principal.tenant_id, connection_id, schema_name, table_name
+                )
+                if fresh is None:
+                    raise RuntimeError("document disappeared immediately after being written")
+                await _embed_and_mark(
+                    session,
+                    tenant_id=principal.tenant_id,
+                    connection_id=connection_id,
+                    schema_name=schema_name,
+                    table_name=table_name,
+                    document=fresh["document"],
+                )
+                action = SyncAction.generated if doc is None else SyncAction.regenerated
+            elif doc["embedded_at"] is None or (doc["edited_at"] or doc["generated_at"]) > doc["embedded_at"]:
+                await _embed_and_mark(
+                    session,
+                    tenant_id=principal.tenant_id,
+                    connection_id=connection_id,
+                    schema_name=schema_name,
+                    table_name=table_name,
+                    document=doc["document"],
+                )
+                action = SyncAction.embedded
+            else:
+                outcomes.append(
+                    SyncTableOutcome(
+                        schema_name=schema_name, table_name=table_name, action=SyncAction.unchanged
+                    )
+                )
+                continue
+            # Per table, so one failure late in a long run can't discard the
+            # LLM calls already paid for.
+            await session.commit()
+            outcomes.append(
+                SyncTableOutcome(schema_name=schema_name, table_name=table_name, action=action)
+            )
+        except Exception as exc:  # noqa: BLE001 - one table failing must not abort the rest
+            await session.rollback()
+            outcomes.append(
+                SyncTableOutcome(
+                    schema_name=schema_name,
+                    table_name=table_name,
+                    action=SyncAction.failed,
+                    detail=str(exc)[:300],
+                )
+            )
+
+    counts = {action.value: 0 for action in SyncAction}
+    for outcome in outcomes:
+        counts[outcome.action.value] += 1
+    return SyncResponse(connection_id=connection_id, counts=counts, tables=outcomes)

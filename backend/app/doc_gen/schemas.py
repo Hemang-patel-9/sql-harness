@@ -1,4 +1,5 @@
 from datetime import datetime
+from enum import StrEnum
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -16,9 +17,6 @@ class AnalystDraft(BaseModel):
 
 
 class CriticRefinement(BaseModel):
-    # Unbounded on purpose: Anthropic drops ge/le into a description hint rather
-    # than enforcing them, so a stray score would fail validation and sink the
-    # whole run over advisory metadata. Clamped in pipeline.py instead.
     quality_score: int
     missing_information: list[str]
     suggestions: list[str]
@@ -75,3 +73,25 @@ class IngestDocumentResponse(BaseModel):
     table_name: str
     qdrant_point_id: UUID
     embedded_at: datetime
+
+
+class SyncAction(StrEnum):
+    generated = "generated"
+    regenerated = "regenerated"
+    embedded = "embedded"
+    unchanged = "unchanged"
+    skipped_edited = "skipped_edited"
+    failed = "failed"
+
+
+class SyncTableOutcome(BaseModel):
+    schema_name: str | None
+    table_name: str
+    action: SyncAction
+    detail: str | None = None
+
+
+class SyncResponse(BaseModel):
+    connection_id: UUID
+    counts: dict[str, int]
+    tables: list[SyncTableOutcome]

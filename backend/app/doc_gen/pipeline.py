@@ -1,8 +1,8 @@
 from ..schema_ingest.schemas import NormalizedTable
-from . import analyst, critic
-from .prompts import build_schema_context
-from .render import render_document
+from .agents import analyst, critic
+from .agents.prompts import build_schema_context
 from .schemas import GeneratedDocument
+from .tools.render import render_document
 
 
 async def generate_document(table: NormalizedTable) -> GeneratedDocument:

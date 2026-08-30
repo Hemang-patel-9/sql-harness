@@ -3,11 +3,11 @@ from uuid import UUID
 
 from qdrant_client import models
 
-from ..core.config import get_settings
-from ..vectorstore import client as qdrant_client
-from ..vectorstore.collections import DENSE_VECTOR_NAME
-from . import openai_client
-from .retry import with_retries
+from ...core.config import get_settings
+from ...vectorstore import client as qdrant_client
+from ...vectorstore.collections import DENSE_VECTOR_NAME
+from ..clients import openai_client
+from ..clients.retry import with_retries
 
 EMBEDDING_MODEL = "text-embedding-3-large"
 

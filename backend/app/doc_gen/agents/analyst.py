@@ -1,8 +1,8 @@
-from ..schema_ingest.schemas import NormalizedTable
-from . import openai_client
+from ...schema_ingest.schemas import NormalizedTable
+from ..clients import openai_client
+from ..clients.retry import with_retries
+from ..schemas import AnalystDraft
 from .prompts import ANALYST_SYSTEM
-from .retry import with_retries
-from .schemas import AnalystDraft
 
 ANALYST_MODEL = "gpt-4o-mini"
 

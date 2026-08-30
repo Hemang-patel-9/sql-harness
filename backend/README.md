@@ -69,6 +69,7 @@ uvicorn app.main:app --reload --port 8000
 | GET    | `/api/connections/{id}/documents/{table}` | The current document for one table |
 | PATCH  | `/api/connections/{id}/documents/{table}` | Edit a table's document text |
 | POST   | `/api/connections/{id}/documents/{table}/ingest` | Embed and upsert the current document into Qdrant |
+| POST   | `/api/connections/{id}/documents/sync` | Bring every table up to date, doing only the work each one needs |
 
 `POST /api/query` body:
 
@@ -278,21 +279,35 @@ momentarily-down API shouldn't take the API down.
 
 `app/doc_gen/` turns one `schema_objects` row into a retrieval-ready text
 document — `TABLE`/`COLUMNS`/`RELATIONSHIPS`/`CONSTRAINTS`/`INDEXES` are
-rendered deterministically in Python (`render.py`, zero tokens, zero
-hallucination risk); only `DESCRIPTION`/`BUSINESS TERMS`/`EXAMPLE QUESTIONS`
-go through a two-stage LLM pipeline:
+rendered deterministically in Python (zero tokens, zero hallucination risk);
+only `DESCRIPTION`/`BUSINESS TERMS`/`EXAMPLE QUESTIONS` go through the LLMs.
 
-- **Schema Analyst** (`analyst.py`, OpenAI `gpt-4o-mini`) drafts those three
-  sections from the deterministic schema context — its real job is the
-  example questions ("what would a user ask that this table should answer").
-- **Retrieval Critic + Refiner** (`critic.py`, Anthropic
-  `claude-haiku-4-5-20251001`), one combined call — scores the draft,
+```
+doc_gen/
+  agents/       # the LLM steps
+    analyst.py    # Schema Analyst - OpenAI gpt-4o-mini
+    critic.py     # Retrieval Critic + Refiner - Anthropic claude-haiku-4-5
+    prompts.py    # system prompts + the schema context both agents read
+  tools/        # deterministic capabilities the pipeline composes
+    render.py     # builds the document's mechanical sections
+    embed.py      # embeds text, upserts the Qdrant point
+  clients/      # provider SDK lifecycles
+    openai_client.py, anthropic_client.py, retry.py
+  pipeline.py   # analyst -> critic -> render
+  repo.py       # schema_documents SQL, source hashing, staleness
+  routes.py     # the five endpoints
+  schemas.py    # LLM I/O + API contracts
+```
+
+- **Schema Analyst** drafts the three semantic sections from the
+  deterministic schema context — its real job is the example questions
+  ("what would a user ask that this table should answer").
+- **Retrieval Critic + Refiner**, one combined call — scores the draft,
   lists what's missing/could improve, and returns refined sections.
-- `pipeline.py` orchestrates both and renders the final document.
 - `repo.py` stores the result in `schema_documents` (one row per table) —
   only the rendered `document` text plus `critic_score`/`critic_notes`;
   never the raw pre-critic draft or the three semantic fields separately.
-- `embed.py` embeds the current document text with OpenAI
+- `tools/embed.py` embeds the current document text with OpenAI
   `text-embedding-3-large` (full 3072 dims) and upserts a **dense-only**
   point into the Qdrant collection — no sparse vector yet, matching
   `app/vectorstore`'s "no retrieval strategy yet" scope.
@@ -302,6 +317,17 @@ Every step is human-reviewable before the next: generate → edit (optional,
 (`GET /api/connections/{id}/documents`) if the source table's structure
 changed since it was generated, or if it was edited/regenerated after it
 was last embedded — either way the live Qdrant point may no longer match.
+
+`POST .../documents/sync` does the whole connection in one call, and only
+the work each table actually needs: a table whose `source_hash` still
+matches its live `schema_objects` row costs no LLM call and no embedding.
+Re-fetching a schema never touches `schema_documents`, so unchanged tables
+keep their documents and their vectors. It reports per table
+(`generated` / `regenerated` / `embedded` / `unchanged` / `skipped_edited` /
+`failed`), commits per table so one late failure can't discard work already
+paid for, and never regenerates a hand-edited document — that text is
+unrecoverable once overwritten, so a changed schema is reported for review
+instead of silently applied.
 
 **No retrieval/search code exists yet** — `ingest` only upserts.
 
