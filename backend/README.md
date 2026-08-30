@@ -15,8 +15,10 @@ app/
   auth/              # signup/login/session cookies
   connections/       # customer DB connections: CRUD, "fire demo query"
   schema_explorer/   # introspects a connection's tables/columns/FKs/indexes
+  schema_ingest/      # normalizes a fetched schema into per-table Postgres rows
   query/             # NL-to-SQL translation (stub today)
   vectorstore/        # Qdrant client + collection config (dense/sparse/filters; no retrieval yet)
+  memory/             # Mem0 Cloud client (setup only; no add/search calls yet)
   main.py            # assembles the FastAPI app from the packages above
 ```
 
@@ -51,12 +53,16 @@ uvicorn app.main:app --reload --port 8000
 | POST   | `/api/query`  | Translate a question into SQL (stub) |
 | GET    | `/api/health/db` | PostgreSQL connectivity probe (read-only) |
 | GET    | `/api/health/qdrant` | Qdrant connectivity probe (read-only) |
+| GET    | `/api/health/mem0` | Mem0 connectivity probe (read-only) |
 | POST   | `/api/auth/signup` | Create an account, sign in            |
 | POST   | `/api/auth/login`  | Sign in                               |
 | POST   | `/api/auth/logout` | Revoke the current session            |
 | GET    | `/api/auth/me`     | Current signed-in user                |
 | GET    | `/api/connections/{id}/schema` | Last-fetched schema snapshot for a connection |
 | POST   | `/api/connections/{id}/schema/fetch` | Connect and read tables/columns/foreign-keys/indexes |
+| GET    | `/api/schema-ingest/connections` | Every connection's schema/ingest status |
+| GET    | `/api/connections/{id}/ingest` | Last "process" result for a connection |
+| POST   | `/api/connections/{id}/ingest` | Normalize the last-fetched schema into per-table rows |
 
 `POST /api/query` body:
 
@@ -237,3 +243,18 @@ QDRANT_DENSE_VECTOR_SIZE=1536
 Changing the vector schema (size, distance, sparse config, which fields are
 indexed) requires dropping and recreating the collection by hand — edit
 `collections.py`, then delete the collection in Qdrant and restart the app.
+
+## Memory (Mem0)
+
+`app/memory/` holds the Mem0 Cloud setup, mirroring `app/vectorstore/`'s
+shape. **Setup only** — no `add`/`search`/`get_all` calls exist anywhere yet.
+
+- `client.py` — a cached `AsyncMemoryClient` (`get_client()`), plus `ping()`
+  (`client.project.get()`, a cheap authenticated read) and `dispose()`.
+- `routes.py` — `GET /api/health/mem0`, a read-only connectivity probe.
+
+Pinged once at startup (`app/main.py`), logged but **non-fatal** — same
+reasoning as Qdrant: nothing calls it yet, so a misconfigured or
+momentarily-down API shouldn't take the API down.
+
+`MEM0_API_KEY` is required, no default, same as the Qdrant settings above.

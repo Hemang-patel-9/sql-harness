@@ -10,6 +10,8 @@ from .connections.routes import router as connections_router
 from .core import db
 from .core.config import get_settings
 from .core.crypto import EncryptionKeyError, ensure_encryption_key_configured
+from .memory import client as mem0
+from .memory.routes import router as memory_router
 from .query.routes import router as query_router
 from .schema_explorer.routes import router as schema_router
 from .schema_ingest.routes import router as schema_ingest_router
@@ -59,9 +61,17 @@ async def lifespan(_: FastAPI):
     except Exception as exc:  # noqa: BLE001 - non-fatal, logged for visibility only
         log.warning("Qdrant not reachable/provisioned: %s", exc)
 
+    # Non-fatal too: nothing calls Mem0 yet.
+    try:
+        await mem0.ping()
+        log.info("Mem0 reachable")
+    except Exception as exc:  # noqa: BLE001 - non-fatal, logged for visibility only
+        log.warning("Mem0 not reachable: %s", exc)
+
     yield
     await db.dispose()
     await qdrant.dispose()
+    await mem0.dispose()
 
 
 settings = get_settings()
@@ -82,6 +92,7 @@ app.include_router(schema_router)
 app.include_router(schema_ingest_router)
 app.include_router(query_router)
 app.include_router(vectorstore_router)
+app.include_router(memory_router)
 
 
 @app.get("/", response_model=HealthResponse)

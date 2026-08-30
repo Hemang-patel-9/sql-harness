@@ -35,6 +35,8 @@ class Settings(BaseSettings):
     qdrant_collection_name: str
     qdrant_dense_vector_size: int
 
+    mem0_api_key: str
+
     @property
     def cors_origins_list(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
