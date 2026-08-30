@@ -12,6 +12,9 @@ from .core.config import get_settings
 from .core.crypto import EncryptionKeyError, ensure_encryption_key_configured
 from .query.routes import router as query_router
 from .schema_explorer.routes import router as schema_router
+from .vectorstore import client as qdrant
+from .vectorstore.collections import ensure_collection as ensure_qdrant_collection
+from .vectorstore.routes import router as vectorstore_router
 
 log = logging.getLogger("uvicorn.error")
 
@@ -48,8 +51,16 @@ async def lifespan(_: FastAPI):
         log.error("Connection encryption key is not configured: %s", exc)
         raise RuntimeError(str(exc)) from exc
 
+    # Non-fatal, unlike Postgres above: nothing calls Qdrant yet.
+    try:
+        await ensure_qdrant_collection()
+        log.info("Qdrant collection %r ready", get_settings().qdrant_collection_name)
+    except Exception as exc:  # noqa: BLE001 - non-fatal, logged for visibility only
+        log.warning("Qdrant not reachable/provisioned: %s", exc)
+
     yield
     await db.dispose()
+    await qdrant.dispose()
 
 
 settings = get_settings()
@@ -68,6 +79,7 @@ app.include_router(auth_router)
 app.include_router(connections_router)
 app.include_router(schema_router)
 app.include_router(query_router)
+app.include_router(vectorstore_router)
 
 
 @app.get("/", response_model=HealthResponse)

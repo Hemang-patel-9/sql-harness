@@ -16,6 +16,7 @@ app/
   connections/       # customer DB connections: CRUD, "fire demo query"
   schema_explorer/   # introspects a connection's tables/columns/FKs/indexes
   query/             # NL-to-SQL translation (stub today)
+  vectorstore/        # Qdrant client + collection config (dense/sparse/filters; no retrieval yet)
   main.py            # assembles the FastAPI app from the packages above
 ```
 
@@ -49,6 +50,7 @@ uvicorn app.main:app --reload --port 8000
 | GET    | `/api/health` | Health check                        |
 | POST   | `/api/query`  | Translate a question into SQL (stub) |
 | GET    | `/api/health/db` | PostgreSQL connectivity probe (read-only) |
+| GET    | `/api/health/qdrant` | Qdrant connectivity probe (read-only) |
 | POST   | `/api/auth/signup` | Create an account, sign in            |
 | POST   | `/api/auth/login`  | Sign in                               |
 | POST   | `/api/auth/logout` | Revoke the current session            |
@@ -191,3 +193,47 @@ upserted on every fetch — `repo.py`), so `GET /api/connections/{id}/schema`
 returns the last fetch instantly without re-connecting to the customer's
 database. `POST .../schema/fetch` re-runs the introspection and overwrites
 the stored snapshot.
+
+## Vector store (Qdrant)
+
+`app/vectorstore/` holds the Qdrant setup: connection plumbing and the
+collection's schema. **No retrieval strategy is implemented yet** — no
+embedding, indexing, search or ranking code exists; this is configuration
+only, ready for that to be built on top.
+
+- `client.py` — a cached `AsyncQdrantClient` (`get_client()`), plus `ping()`
+  and `dispose()`, mirroring `app/core/db.py`'s shape.
+- `collections.py` — the collection's vector schema, and `ensure_collection()`
+  to provision it:
+  - **Dense vector** (`"dense"`, cosine distance, size from
+    `QDRANT_DENSE_VECTOR_SIZE` — depends on whichever embedding model gets
+    chosen later).
+  - **Sparse vector** (`"bm25"`) with `Modifier.IDF`, for BM25-style lexical
+    matching alongside the dense vector.
+  - **Metadata filter indexes** on `tenant_id`, `connection_id`,
+    `schema_name`, `table_name`, `object_type` — keyword-indexed payload
+    fields so a search can be scoped to one tenant/connection/table.
+- `routes.py` — `GET /api/health/qdrant`, a read-only connectivity probe.
+
+`ensure_collection()` is idempotent (checks `collection_exists` first) and is
+called once at startup (`app/main.py`), logged but **non-fatal** if Qdrant is
+unreachable — unlike Postgres, nothing depends on it yet, so a misconfigured
+or momentarily-down cluster shouldn't take the API down. Unlike `schema.sql`,
+there's no separate "apply by hand" step: creating a Qdrant collection is
+idempotent and side-effect-free after the first run, so provisioning it at
+startup is safe.
+
+All five settings are required — no defaults, and the app refuses to start
+without them, the same way it refuses to start without `DATABASE_URL`:
+
+```
+QDRANT_URL=https://xxxxxxxx.aws.cloud.qdrant.io
+QDRANT_API_KEY=...
+QDRANT_TIMEOUT_SECONDS=10
+QDRANT_COLLECTION_NAME=schema_chunks
+QDRANT_DENSE_VECTOR_SIZE=1536
+```
+
+Changing the vector schema (size, distance, sparse config, which fields are
+indexed) requires dropping and recreating the collection by hand — edit
+`collections.py`, then delete the collection in Qdrant and restart the app.

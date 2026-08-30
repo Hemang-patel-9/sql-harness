@@ -28,6 +28,13 @@ class Settings(BaseSettings):
     # Postgres. Leave false anywhere the backend isn't fully trusted.
     allow_private_connection_hosts: bool = False
 
+    # Required, no defaults - collection shape itself lives in app/vectorstore/collections.py.
+    qdrant_url: str
+    qdrant_api_key: str
+    qdrant_timeout_seconds: int
+    qdrant_collection_name: str
+    qdrant_dense_vector_size: int
+
     @property
     def cors_origins_list(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
