@@ -50,7 +50,8 @@ src/
 │   ├── signup/page.tsx     account creation
 │   └── (app)/              route group that shares the app shell
 │       ├── layout.tsx
-│       └── query/, schema/, connections/, settings/
+│       ├── query/, connections/, settings/
+│       └── schema/     canvas, layout engine, card, detail panel
 ├── components/
 │   ├── app-shell.tsx       navbar + sidebar + session guard
 │   ├── navbar.tsx          brand, notifications, theme, account
@@ -99,6 +100,40 @@ src/
   (`ui/tilt-card.tsx`, on a shared `.stage` perspective).
   `prefers-reduced-motion` is respected globally, and both `Reveal` and
   `TiltCard` render their plain final state under it.
+
+## The schema canvas
+
+`app/(app)/schema/` is the densest surface in the app and is split by job:
+
+| File                | What it owns                                              |
+| ------------------- | --------------------------------------------------------- |
+| `schema-layout.ts`  | Placement, colouring and relationship geometry. Pure, no React. |
+| `schema-canvas.tsx` | The viewport: pan, zoom, drag, minimap, shortcuts, filters. |
+| `table-card.tsx`    | One table on the canvas.                                   |
+| `table-detail.tsx`  | The side panel for the selected table.                     |
+| `layout-store.ts`   | Hand-placed positions, persisted per connection.           |
+
+- **Layout is relationship-aware.** Tables are grouped into connected
+  components, each laid out in columns by distance from its busiest table and
+  then reordered by a single barycenter pass to cut edge crossings. Clusters
+  flow into rows; tables with no relationships are shelved in one block at the
+  end. It is deterministic — the same schema lands in the same place every
+  time, with no physics simulation.
+- **Every table has a colour.** `buildAccents` starts each table from a hue
+  derived from its name, then resolves clashes so no two tables joined by a
+  foreign key share one — following a join by its colour only works if the two
+  ends can be told apart. The hue appears on the card's top bar, its icons, the
+  joins leaving it, and its rectangle in the minimap. Column types get their
+  own muted role colours (`--type-num`, `--type-time`, …). Amber stays out of
+  this palette entirely so it keeps meaning "this one".
+- **Positions are yours.** Drag any table and the edges re-route live; the
+  layout is saved per connection in `localStorage` through the same
+  `createPersistedStore` used elsewhere, so the server render and the first
+  client render agree before the saved layout swaps in. "Reset layout" returns
+  to the automatic placement.
+- **Shortcuts**: `/` search, `+`/`-` zoom, `0` fit, `F` fullscreen, arrows pan
+  (hold shift for larger steps), `Esc` steps back out of shortcuts → isolate →
+  selection → fullscreen.
 
 ## The 3D scene
 

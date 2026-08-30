@@ -23,6 +23,7 @@ import { Dropdown, DropdownItem } from "../../../components/ui/dropdown";
 import { engineIcon } from "../../../components/ui/engine-select";
 import { ease } from "../../../lib/motion";
 import { Modal } from "../../../components/ui/modal";
+import { Button } from "../../../components/ui/button";
 import { EmptyState, PageShell } from "../../../components/ui/page-shell";
 import { cn } from "../../../lib/utils";
 import { SCHEMA_QUERIES, SchemaQueriesPreview } from "./schema-queries";
@@ -68,7 +69,8 @@ function ConnectionPicker({
         </span>
       }
       triggerLabel="Choose a connection"
-      triggerClassName="w-auto gap-2 rounded-lg border border-line px-3 hover:border-line-strong"
+      variant="field"
+      triggerClassName="w-auto gap-2"
       panelClassName="w-72"
     >
       {connections.map((connection) => {
@@ -221,17 +223,15 @@ export function SchemaClient() {
       description="Fetch the live tables, columns, relationships and indexes so queries can be written against what your database actually looks like."
       actions={
         connectedConnections.length > 0 && (
-          <div className="flex items-center gap-2">
+          <>
             <ConnectionPicker
               connections={connectedConnections}
               selected={selectedConnection}
               onSelect={setSelectedId}
             />
-            <button
-              type="button"
+            <Button
               disabled={!selectedId || fetching}
               onClick={() => setConfirmOpen(true)}
-              className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-ink px-3.5 text-sm font-medium text-paper transition-[opacity,transform] duration-150 hover:opacity-90 active:scale-[0.97] disabled:pointer-events-none disabled:opacity-50"
             >
               {fetching ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -239,8 +239,8 @@ export function SchemaClient() {
                 <RefreshCw className="h-4 w-4" />
               )}
               {snapshot ? "Refetch schema" : "Fetch schema"}
-            </button>
-          </div>
+            </Button>
+          </>
         )
       }
     >
@@ -281,19 +281,14 @@ export function SchemaClient() {
                 title="No schema fetched yet"
                 description={`Fetch ${selectedConnection?.label ?? "this connection"}'s schema to see its tables, columns, relationships and indexes.`}
               />
-              <button
-                type="button"
-                onClick={() => setConfirmOpen(true)}
-                disabled={fetching}
-                className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-ink px-4 text-sm font-medium text-paper transition-[opacity,transform] duration-150 hover:opacity-90 active:scale-[0.97] disabled:pointer-events-none disabled:opacity-50"
-              >
+              <Button onClick={() => setConfirmOpen(true)} disabled={fetching}>
                 {fetching ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
                   <RefreshCw className="h-4 w-4" />
                 )}
                 Fetch schema
-              </button>
+              </Button>
             </div>
           ) : (
             <>
@@ -350,7 +345,11 @@ export function SchemaClient() {
                 )}
               </AnimatePresence>
 
-              <SchemaCanvas key={snapshot.connectionId} tables={snapshot.tables} />
+              <SchemaCanvas
+                key={snapshot.connectionId}
+                tables={snapshot.tables}
+                connectionId={snapshot.connectionId}
+              />
             </>
           )}
         </div>
@@ -367,20 +366,10 @@ export function SchemaClient() {
             </p>
             <SchemaQueriesPreview queries={SCHEMA_QUERIES[selectedConnection.engine]} />
             <div className="flex items-center justify-end gap-2 border-t border-line pt-4">
-              <button
-                type="button"
-                onClick={() => setConfirmOpen(false)}
-                className="text-sm font-medium text-muted transition-colors hover:text-ink"
-              >
+              <Button variant="ghost" onClick={() => setConfirmOpen(false)}>
                 Cancel
-              </button>
-              <button
-                type="button"
-                onClick={runFetch}
-                className="inline-flex h-9 items-center rounded-lg bg-ink px-4 text-sm font-medium text-paper transition-[opacity,transform] duration-150 hover:opacity-90 active:scale-[0.98]"
-              >
-                Fetch schema
-              </button>
+              </Button>
+              <Button onClick={runFetch}>Fetch schema</Button>
             </div>
           </div>
         )}

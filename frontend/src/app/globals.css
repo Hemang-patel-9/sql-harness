@@ -53,6 +53,30 @@
   --grain-strength: 0.032;
   --scene-node: #0c1218;
   --scene-line: #98a4b2;
+
+  /* Table identity ----------------------------------------------
+     Nine hues assigned to tables by name on the schema canvas, so a
+     table and the joins leaving it share a colour you can follow
+     across the diagram. Deliberately no amber or orange: the signal
+     colour has to keep meaning "this one", not "this table". */
+  --accent-1: #0f857a;
+  --accent-2: #2563c1;
+  --accent-3: #7c46c9;
+  --accent-4: #c0396a;
+  --accent-5: #2f8b45;
+  --accent-6: #0d7fa5;
+  --accent-7: #a03a92;
+  --accent-8: #4a4fc4;
+  --accent-9: #6d7c22;
+
+  /* Column types. Small, right-aligned, low-saturation — they tint a
+     column of 10px mono text, they do not shout. */
+  --type-num: #2f6fb0;
+  --type-text: #5b6470;
+  --type-time: #7c46c9;
+  --type-bool: #2f8b45;
+  --type-uuid: #0f857a;
+  --type-json: #a03a92;
 }
 
 .dark {
@@ -89,6 +113,23 @@
   --grain-strength: 0.055;
   --scene-node: #eaeff4;
   --scene-line: #46535f;
+
+  --accent-1: #45cfc0;
+  --accent-2: #6ea8f5;
+  --accent-3: #b48af0;
+  --accent-4: #f186a8;
+  --accent-5: #63d183;
+  --accent-6: #45c2e8;
+  --accent-7: #e389d6;
+  --accent-8: #8f92f2;
+  --accent-9: #b6c657;
+
+  --type-num: #7fb3ea;
+  --type-text: #98a4b1;
+  --type-time: #b48af0;
+  --type-bool: #63d183;
+  --type-uuid: #45cfc0;
+  --type-json: #e389d6;
 }
 
 @theme inline {

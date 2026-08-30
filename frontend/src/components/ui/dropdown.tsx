@@ -25,6 +25,13 @@ interface DropdownProps {
   /** Rendered inside the trigger button. */
   trigger: ReactNode;
   triggerLabel: string;
+  /**
+   * `icon` is the quiet square used in the navbar: no resting background,
+   * a surface only on hover. `field` is a real control that has to look
+   * like one wherever it lands — including on a patterned ground, where a
+   * transparent button reads as a hole in the page.
+   */
+  variant?: "icon" | "field";
   triggerClassName?: string;
   panelClassName?: string;
   children: ReactNode;
@@ -33,6 +40,7 @@ interface DropdownProps {
 export function Dropdown({
   trigger,
   triggerLabel,
+  variant = "icon",
   triggerClassName,
   panelClassName,
   children,
@@ -77,9 +85,19 @@ export function Dropdown({
         onClick={() => setOpen((value) => !value)}
         className={cn(
           "relative grid h-9 shrink-0 place-items-center rounded-lg text-ink-2",
-          "transition-[background-color,color,transform] duration-150",
-          "hover:bg-surface-2 hover:text-ink active:scale-90",
-          open && "bg-surface-2 text-ink",
+          "transition-[background-color,border-color,box-shadow,color,transform] duration-150",
+          variant === "icon"
+            ? cn(
+                "hover:bg-surface-2 hover:text-ink active:scale-90",
+                open && "bg-surface-2 text-ink",
+              )
+            : cn(
+                "border border-line bg-surface px-3 text-ink",
+                "[box-shadow:var(--elev-inset),var(--elev-1)]",
+                "hover:border-line-strong hover:[box-shadow:var(--elev-inset),var(--elev-2)]",
+                "active:[box-shadow:var(--elev-inset),var(--elev-1)]",
+                open && "border-line-strong",
+              ),
           triggerClassName ?? "w-9",
         )}
       >

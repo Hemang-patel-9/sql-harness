@@ -30,9 +30,9 @@ export function PageShell({
       <div className="dot-field border-b border-line">
         <motion.header
           variants={riseItem}
-          className="mx-auto flex w-full max-w-5xl flex-wrap items-end justify-between gap-4 px-4 pb-8 pt-8 sm:px-6 lg:px-8 lg:pb-10 lg:pt-11"
+          className="mx-auto flex w-full max-w-5xl flex-wrap items-end gap-4 px-4 pb-8 pt-8 sm:px-6 lg:px-8 lg:pb-10 lg:pt-11"
         >
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1 basis-80">
             <p className="eyebrow eyebrow-tick">{eyebrow}</p>
             <h1 className="mt-3.5 text-[27px] font-semibold leading-tight tracking-[-0.025em] text-ink sm:text-[32px]">
               {title}
@@ -41,7 +41,14 @@ export function PageShell({
               {description}
             </p>
           </div>
-          {actions}
+
+          {/* `ml-auto` rather than `justify-between`: when the header wraps,
+              a lone item on the second row would otherwise jump to the left
+              edge — which is what made the schema picker move once the
+              eyebrow grew from "2 connected databases" to a table count. */}
+          {actions && (
+            <div className="ml-auto flex shrink-0 items-center gap-2">{actions}</div>
+          )}
         </motion.header>
       </div>
 
