@@ -462,3 +462,185 @@ export async function fetchSchema(connectionId: string): Promise<SchemaFetchResu
     snapshot: payload.snapshot ? toSchemaSnapshot(payload.snapshot) : null,
   };
 }
+
+export type RelationshipDirection = "outgoing" | "incoming";
+
+export interface NormalizedRelationship {
+  direction: RelationshipDirection;
+  constraintName: string;
+  table: string;
+  columns: string[];
+  referencedTable: string;
+  referencedColumns: string[];
+  onUpdate: string | null;
+  onDelete: string | null;
+}
+
+/** One table, normalized: {table, columns, relationships, indexes} - the
+ * shape stored in Postgres (schema_objects) for a later description-
+ * generation step to read. */
+export interface NormalizedTable {
+  table: string;
+  columns: SchemaColumn[];
+  relationships: NormalizedRelationship[];
+  indexes: SchemaIndex[];
+}
+
+export interface IngestResult {
+  connectionId: string;
+  processedAt: string;
+  tableCount: number;
+  tables: NormalizedTable[];
+}
+
+export interface IngestConnectionSummary {
+  connectionId: string;
+  label: string;
+  engine: DbEngine;
+  host: string;
+  port: number;
+  databaseName: string;
+  status: ConnectionStatus;
+  hasSnapshot: boolean;
+  snapshotFetchedAt: string | null;
+  snapshotTableCount: number | null;
+  isProcessed: boolean;
+  processedAt: string | null;
+  processedTableCount: number | null;
+}
+
+interface NormalizedTablePayload {
+  table: string;
+  columns: Array<{
+    name: string;
+    data_type: string;
+    nullable: boolean;
+    default: string | null;
+    ordinal_position: number;
+    max_length: number | null;
+    numeric_precision: number | null;
+    numeric_scale: number | null;
+    is_primary_key: boolean;
+    is_foreign_key: boolean;
+  }>;
+  relationships: Array<{
+    direction: RelationshipDirection;
+    constraint_name: string;
+    table: string;
+    columns: string[];
+    referenced_table: string;
+    referenced_columns: string[];
+    on_update: string | null;
+    on_delete: string | null;
+  }>;
+  indexes: Array<{ name: string; columns: string[]; is_unique: boolean; is_primary: boolean }>;
+}
+
+function toNormalizedTable(payload: NormalizedTablePayload): NormalizedTable {
+  return {
+    table: payload.table,
+    columns: payload.columns.map((column) => ({
+      name: column.name,
+      dataType: column.data_type,
+      nullable: column.nullable,
+      default: column.default,
+      ordinalPosition: column.ordinal_position,
+      maxLength: column.max_length,
+      numericPrecision: column.numeric_precision,
+      numericScale: column.numeric_scale,
+      isPrimaryKey: column.is_primary_key,
+      isForeignKey: column.is_foreign_key,
+    })),
+    relationships: payload.relationships.map((rel) => ({
+      direction: rel.direction,
+      constraintName: rel.constraint_name,
+      table: rel.table,
+      columns: rel.columns,
+      referencedTable: rel.referenced_table,
+      referencedColumns: rel.referenced_columns,
+      onUpdate: rel.on_update,
+      onDelete: rel.on_delete,
+    })),
+    indexes: payload.indexes.map((index) => ({
+      name: index.name,
+      columns: index.columns,
+      isUnique: index.is_unique,
+      isPrimary: index.is_primary,
+    })),
+  };
+}
+
+function toIngestResult(payload: {
+  connection_id: string;
+  processed_at: string;
+  table_count: number;
+  tables: NormalizedTablePayload[];
+}): IngestResult {
+  return {
+    connectionId: payload.connection_id,
+    processedAt: payload.processed_at,
+    tableCount: payload.table_count,
+    tables: payload.tables.map(toNormalizedTable),
+  };
+}
+
+/** All connections, with whether each has a fetched schema and/or has
+ * already been processed into normalized schema_objects rows. */
+export async function listIngestConnections(): Promise<IngestConnectionSummary[]> {
+  const res = await fetch(`${API_BASE_URL}/api/schema-ingest/connections`, {
+    credentials: "include",
+  });
+  if (!res.ok) throw await parseApiError(res);
+  const payload: Array<{
+    connection_id: string;
+    label: string;
+    engine: DbEngine;
+    host: string;
+    port: number;
+    database_name: string;
+    status: ConnectionStatus;
+    has_snapshot: boolean;
+    snapshot_fetched_at: string | null;
+    snapshot_table_count: number | null;
+    is_processed: boolean;
+    processed_at: string | null;
+    processed_table_count: number | null;
+  }> = await res.json();
+
+  return payload.map((row) => ({
+    connectionId: row.connection_id,
+    label: row.label,
+    engine: row.engine,
+    host: row.host,
+    port: row.port,
+    databaseName: row.database_name,
+    status: row.status,
+    hasSnapshot: row.has_snapshot,
+    snapshotFetchedAt: row.snapshot_fetched_at,
+    snapshotTableCount: row.snapshot_table_count,
+    isProcessed: row.is_processed,
+    processedAt: row.processed_at,
+    processedTableCount: row.processed_table_count,
+  }));
+}
+
+/** Normalizes the connection's last-fetched schema (see getSchemaSnapshot)
+ * into per-table rows and persists them, replacing any previous run. */
+export async function processIngest(connectionId: string): Promise<IngestResult> {
+  const res = await fetch(`${API_BASE_URL}/api/connections/${connectionId}/ingest`, {
+    method: "POST",
+    credentials: "include",
+  });
+  if (!res.ok) throw await parseApiError(res);
+  return toIngestResult(await res.json());
+}
+
+/** The result of the last "Process" run, or null if it has never been run. */
+export async function getIngestStatus(connectionId: string): Promise<IngestResult | null> {
+  const res = await fetch(`${API_BASE_URL}/api/connections/${connectionId}/ingest`, {
+    credentials: "include",
+  });
+  if (res.status === 404) return null;
+  if (!res.ok) throw await parseApiError(res);
+  return toIngestResult(await res.json());
+}

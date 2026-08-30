@@ -1,4 +1,4 @@
-import { Database, Plug, Terminal } from "lucide-react";
+import { Database, Layers, Plug, Terminal } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 export interface NavItem {
@@ -30,6 +30,12 @@ export const NAV_ITEMS: NavItem[] = [
     label: "Connections",
     icon: Plug,
     blurb: "Databases you can reach",
+  },
+  {
+    href: "/ingest",
+    label: "Ingest",
+    icon: Layers,
+    blurb: "Normalize a fetched schema, table by table",
   },
 ];
 

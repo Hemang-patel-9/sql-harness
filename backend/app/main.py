@@ -12,6 +12,7 @@ from .core.config import get_settings
 from .core.crypto import EncryptionKeyError, ensure_encryption_key_configured
 from .query.routes import router as query_router
 from .schema_explorer.routes import router as schema_router
+from .schema_ingest.routes import router as schema_ingest_router
 from .vectorstore import client as qdrant
 from .vectorstore.collections import ensure_collection as ensure_qdrant_collection
 from .vectorstore.routes import router as vectorstore_router
@@ -78,6 +79,7 @@ app.add_middleware(
 app.include_router(auth_router)
 app.include_router(connections_router)
 app.include_router(schema_router)
+app.include_router(schema_ingest_router)
 app.include_router(query_router)
 app.include_router(vectorstore_router)
 
