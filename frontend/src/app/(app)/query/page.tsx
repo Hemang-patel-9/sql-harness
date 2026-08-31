@@ -4,9 +4,9 @@ import { PageShell } from "../../../components/ui/page-shell";
 export default function QueryPage() {
   return (
     <PageShell
-      eyebrow="Connected to analytics-prod"
+      eyebrow="Understands and retrieves — SQL generation is not wired up yet"
       title="Query"
-      description="Describe what you want to know. You get SQL back — read it before you run it."
+      description="Pick the database first, then ask. You get back what the question actually said, and which of your tables could answer it — searched two ways and reranked — before any SQL is written."
     >
       <QueryConsole />
     </PageShell>

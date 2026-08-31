@@ -16,8 +16,8 @@ app/
   connections/       # customer DB connections: CRUD, "fire demo query"
   schema_explorer/   # introspects a connection's tables/columns/FKs/indexes
   schema_ingest/      # normalizes a fetched schema into per-table Postgres rows
-  query/             # NL-to-SQL translation (stub today)
-  vectorstore/        # Qdrant client + collection config (dense/sparse/filters; no retrieval yet)
+  query/             # understand -> hybrid retrieve -> rerank; no SQL yet
+  vectorstore/        # Qdrant client, collection config, BM25 sparse encoding
   memory/             # Mem0 Cloud client (setup only; no add/search calls yet)
   doc_gen/            # generates/reviews/embeds one retrieval document per table (dense-only)
   main.py            # assembles the FastAPI app from the packages above
@@ -51,9 +51,10 @@ uvicorn app.main:app --reload --port 8000
 | ------ | ------------- | ------------------------------------ |
 | GET    | `/`           | Health check                        |
 | GET    | `/api/health` | Health check                        |
-| POST   | `/api/query`  | Translate a question into SQL (stub) |
+| POST   | `/api/query`  | Read a question, then retrieve the tables that could answer it |
 | GET    | `/api/health/db` | PostgreSQL connectivity probe (read-only) |
 | GET    | `/api/health/qdrant` | Qdrant connectivity probe (read-only) |
+| POST   | `/api/vectorstore/backfill-sparse` | Add the missing `bm25` vector to this tenant's points |
 | GET    | `/api/health/mem0` | Mem0 connectivity probe (read-only) |
 | POST   | `/api/auth/signup` | Create an account, sign in            |
 | POST   | `/api/auth/login`  | Sign in                               |
@@ -71,14 +72,142 @@ uvicorn app.main:app --reload --port 8000
 | POST   | `/api/connections/{id}/documents/{table}/ingest` | Embed and upsert the current document into Qdrant |
 | POST   | `/api/connections/{id}/documents/sync` | Bring every table up to date, doing only the work each one needs |
 
-`POST /api/query` body:
+## Query
+
+`POST /api/query` (`app/query/`) is the natural-language entry point. It is
+signed-in only and names the database it is asking, so a question is always
+scoped to one of the caller's own connections:
 
 ```json
-{ "question": "Show all users who signed up last week" }
+{ "connection_id": "8f2c…", "question": "Top 10 customers by lifetime value last quarter" }
 ```
 
-The translation logic lives in `app/query/service.py` — replace the stub with a
-real model/LLM call.
+### Intent & query understanding
+
+`understand.py` is the pipeline's first stage: one `claude-haiku-4-5` call
+that structures the question. It is **schema-blind on purpose** — the
+connection's tables and columns are not in the prompt, so what comes back is
+the question's own vocabulary. Resolving that onto real tables is retrieval's
+job, and this output is what retrieval will search with. That also means the
+stage needs no ingest and no documents: it works on any connected database.
+
+```json
+{
+  "intent": "ranking",
+  "entities": [{ "name": "customer", "mentioned_as": "customers" }],
+  "metrics": [{ "name": "lifetime value", "aggregation": "sum" }],
+  "filters": [],
+  "time": {
+    "field": null, "expression": "last quarter",
+    "start_date": "2026-04-01", "end_date": "2026-06-30", "grain": null
+  },
+  "grouping": ["customer"],
+  "ranking": { "by": "lifetime value", "direction": "descending", "limit": 10 },
+  "ambiguities": ["whether 'lifetime value' is cumulative or only last quarter's transactions"]
+}
+```
+
+- Every field is a typed object rather than a phrase (`filters` carry
+  field/operator/values, `ranking` carries by/direction/limit) — this is the
+  payload a generator can consume, where strings would have to be re-parsed.
+- The request date is the one outside fact the prompt gets, so `last quarter`
+  resolves to real ISO dates. Vague phrases are left `null` rather than guessed.
+- `ambiguities` is what the *question* left open. "Which table holds revenue"
+  deliberately doesn't belong there — that's expected of a schema-blind stage
+  and gets resolved by retrieval.
+- The prompt's central rule is that an empty list is the correct answer when
+  the question doesn't mention something. A question like "show me stuff"
+  comes back `intent: "unclear"` with everything empty, not invented structure.
+- `Aggregation.row_count` is spelled that way because an enum member named
+  `count` shadows `str.count` on a `StrEnum`. Its wire value is still `"count"`.
+
+Structured output uses `messages.parse(output_format=...)` → `parsed_output`,
+the same shape as `doc_gen/agents/critic.py`, wrapped in the shared
+`with_retries`. The Anthropic client is reused from `app/doc_gen/clients/` —
+those clients aren't doc-gen-specific, and this is the same cross-package
+reuse `schema_explorer/introspect.py` makes of `connections/probe.py`.
+
+**Nothing after this stage exists.** No retrieval, no SQL, nothing runs
+against the customer's database on this path — `app/vectorstore` has no
+search and `app/doc_gen` only embeds.
+
+### Hybrid retrieval
+
+Once the question is structured, `retrieve.py` finds the tables that could
+answer it. Two independent searches over the same Qdrant collection, each
+given the input its algorithm is actually good at — this is the concrete
+payoff for running understanding first:
+
+| Arm | Query text | Why |
+| --- | --- | --- |
+| `dense` | the question as written | documents carry an EXAMPLE QUESTIONS section, so natural language has something to be close to |
+| `bm25` | terms pulled from the understanding | lexical scoring wants discrete words, not "top 10 … by … last" |
+
+Each returns its own top 6 (`TOP_K_PER_ARM`). The union is deduplicated —
+a table both arms found keeps both ranks, which is itself a signal — and
+the whole union goes to a cross-encoder, which produces the order that is
+actually used. Both searches filter on `tenant_id` **and** `connection_id`
+(keyword payload indexes, `collections.py`); that filter is the tenant
+boundary inside the vector store, so it is never optional.
+
+The reranker is `BAAI/bge-reranker-v2-m3` (`rerank.py`), chosen for its
+8192-token context: a table document's COLUMNS and RELATIONSHIPS blocks
+alone can run past a thousand tokens, and a 512-token reranker would score
+the header and never reach the part that decides whether the table can
+answer the question. It reads the query and the document **together**,
+which is why it reorders the two arms' output rather than just agreeing
+with it. Dense and BM25 each score a document without ever seeing the pair.
+
+`sentence-transformers` is synchronous and CPU-bound, so every call into it
+goes through `asyncio.to_thread` — running it inline would stall the event
+loop for every other request. The ~2.3GB model is warmed in a background
+task at startup (`main.py`), not in the startup path, so a cold cache
+doesn't block the API from serving everything else.
+
+Scores are not comparable across arms: dense is cosine similarity, BM25 is
+an unbounded term sum, and the rerank score is a logit that means something
+only within one question. Rank is what to read.
+
+### The `bm25` vector had to be backfilled
+
+`collections.py` has always declared a sparse `bm25` vector with
+`Modifier.IDF`, but `doc_gen/tools/embed.py` only ever wrote the dense half,
+so every point was half-empty and a lexical search matched nothing. Two
+fixes, both applied:
+
+- The embed path now writes both vectors, so new documents are complete.
+- `POST /api/vectorstore/backfill-sparse` repairs the old ones. The document
+  text is already on each point's payload, so it needs no LLM call, no
+  re-generation and no round trip through Postgres — it re-reads what Qdrant
+  stores and fills in the other half with `update_vectors`, leaving the
+  dense vector and payload untouched. Tenant-scoped and idempotent; run it
+  once after upgrading.
+
+`Modifier.IDF` means Qdrant computes the IDF term itself from the
+collection, so `vectorstore/sparse.py` only produces term frequencies. That
+is also why documents and queries encode differently — `embed()` weights by
+frequency within a document, `query_embed()` does not, because a query isn't
+a document.
+
+### The way in
+
+- `get_current_principal` — no session cookie, no answer (`401`), before the
+  body is even validated.
+- The connection is resolved with `connections_repo.get_connection`, which
+  filters on `tenant_id` and `deleted_at IS NULL`. Another tenant's connection
+  id is a `404`, the same answer as one that doesn't exist — a `403` would
+  confirm it exists.
+- `status = 'connected'` is required, enforced as a `400`, not just hidden in
+  the UI — the same gate that guards schema fetching.
+- The question is capped at `MAX_QUESTION_LENGTH` (2000) and rejected if blank
+  after stripping.
+- A provider failure is a `502` with a flat sentence; the provider's own
+  message can name the account or the key, so it goes to the log instead.
+- The stored credentials are never read here.
+
+`query_runs` (see `schema.sql`) is where runs will be recorded once there is a
+route, a trace and a SQL statement worth keeping. It is deliberately untouched
+while only this stage exists.
 
 ## Auth
 

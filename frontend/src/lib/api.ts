@@ -1,27 +1,6 @@
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 
-export interface QueryResponse {
-  question: string;
-  sql: string;
-  note: string;
-}
-
-export async function generateSql(question: string): Promise<QueryResponse> {
-  const res = await fetch(`${API_BASE_URL}/api/query`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ question }),
-  });
-
-  if (!res.ok) {
-    const detail = await res.text();
-    throw new Error(`API error ${res.status}: ${detail}`);
-  }
-
-  return res.json();
-}
-
 export interface AuthUser {
   id: string;
   email: string;
@@ -869,4 +848,273 @@ export async function ingestTableDocument(
   if (!res.ok) throw await parseApiError(res);
   const payload: { qdrant_point_id: string; embedded_at: string } = await res.json();
   return { qdrantPointId: payload.qdrant_point_id, embeddedAt: payload.embedded_at };
+}
+
+/* ------------------------------------------------------------------ */
+/* Query — intent & understanding                                      */
+/* ------------------------------------------------------------------ */
+
+export type QuestionIntent =
+  | "lookup"
+  | "aggregation"
+  | "ranking"
+  | "trend"
+  | "comparison"
+  | "unclear";
+
+export type Aggregation =
+  | "count"
+  | "distinct_count"
+  | "sum"
+  | "average"
+  | "minimum"
+  | "maximum"
+  | "none";
+
+export type FilterOperator =
+  | "equals"
+  | "not_equals"
+  | "greater_than"
+  | "greater_or_equal"
+  | "less_than"
+  | "less_or_equal"
+  | "one_of"
+  | "not_one_of"
+  | "contains"
+  | "between"
+  | "is_null"
+  | "is_not_null";
+
+export type SortDirection = "ascending" | "descending";
+
+export type TimeGrain = "hour" | "day" | "week" | "month" | "quarter" | "year";
+
+export interface QueryEntity {
+  name: string;
+  /** The question's own wording, so the UI can show what `name` came from. */
+  mentionedAs: string;
+}
+
+export interface QueryMetric {
+  name: string;
+  aggregation: Aggregation;
+}
+
+export interface QueryFilter {
+  field: string;
+  operator: FilterOperator;
+  /** One for scalar operators, two for `between`, many for `one_of`. */
+  values: string[];
+}
+
+export interface QueryTimeFrame {
+  field: string | null;
+  /** The phrase as the user wrote it. */
+  expression: string;
+  /** Resolved server-side; null when the phrase was vague. */
+  startDate: string | null;
+  endDate: string | null;
+  grain: TimeGrain | null;
+}
+
+export interface QueryRanking {
+  by: string;
+  direction: SortDirection;
+  limit: number | null;
+}
+
+/** Schema-blind: every value is the user's own vocabulary, not a resolved
+ *  table or column. */
+export interface QueryUnderstanding {
+  intent: QuestionIntent;
+  entities: QueryEntity[];
+  metrics: QueryMetric[];
+  filters: QueryFilter[];
+  time: QueryTimeFrame | null;
+  grouping: string[];
+  ranking: QueryRanking | null;
+  ambiguities: string[];
+}
+
+export type RetrievalArm = "dense" | "bm25";
+
+export interface RetrievedTable {
+  schemaName: string | null;
+  tableName: string;
+  document: string;
+  foundBy: RetrievalArm[];
+  /** Null means that arm did not return this table in its top K. */
+  denseRank: number | null;
+  denseScore: number | null;
+  bm25Rank: number | null;
+  bm25Score: number | null;
+  /** Cross-encoder logit — comparable within one question only. Read `finalRank`. */
+  rerankScore: number;
+  finalRank: number;
+}
+
+export interface Retrieval {
+  denseQuery: string;
+  keywordQuery: string;
+  topKPerArm: number;
+  rerankerModel: string;
+  denseHitCount: number;
+  bm25HitCount: number;
+  candidateCount: number;
+  tables: RetrievedTable[];
+  note: string | null;
+}
+
+export interface QueryResponse {
+  connectionId: string;
+  /** Echoed back by the server, so the answer names the database it came from. */
+  connectionLabel: string;
+  question: string;
+  understanding: QueryUnderstanding;
+  retrieval: Retrieval;
+}
+
+interface RetrievalPayload {
+  dense_query: string;
+  keyword_query: string;
+  top_k_per_arm: number;
+  reranker_model: string;
+  dense_hit_count: number;
+  bm25_hit_count: number;
+  candidate_count: number;
+  note: string | null;
+  tables: Array<{
+    schema_name: string | null;
+    table_name: string;
+    document: string;
+    found_by: RetrievalArm[];
+    dense_rank: number | null;
+    dense_score: number | null;
+    bm25_rank: number | null;
+    bm25_score: number | null;
+    rerank_score: number;
+    final_rank: number;
+  }>;
+}
+
+function toRetrieval(payload: RetrievalPayload): Retrieval {
+  return {
+    denseQuery: payload.dense_query,
+    keywordQuery: payload.keyword_query,
+    topKPerArm: payload.top_k_per_arm,
+    rerankerModel: payload.reranker_model,
+    denseHitCount: payload.dense_hit_count,
+    bm25HitCount: payload.bm25_hit_count,
+    candidateCount: payload.candidate_count,
+    note: payload.note,
+    tables: payload.tables.map((t) => ({
+      schemaName: t.schema_name,
+      tableName: t.table_name,
+      document: t.document,
+      foundBy: t.found_by,
+      denseRank: t.dense_rank,
+      denseScore: t.dense_score,
+      bm25Rank: t.bm25_rank,
+      bm25Score: t.bm25_score,
+      rerankScore: t.rerank_score,
+      finalRank: t.final_rank,
+    })),
+  };
+}
+
+interface UnderstandingPayload {
+  intent: QuestionIntent;
+  entities: Array<{ name: string; mentioned_as: string }>;
+  metrics: QueryMetric[];
+  filters: QueryFilter[];
+  time: {
+    field: string | null;
+    expression: string;
+    start_date: string | null;
+    end_date: string | null;
+    grain: TimeGrain | null;
+  } | null;
+  grouping: string[];
+  ranking: QueryRanking | null;
+  ambiguities: string[];
+}
+
+function toUnderstanding(payload: UnderstandingPayload): QueryUnderstanding {
+  return {
+    intent: payload.intent,
+    entities: payload.entities.map((e) => ({ name: e.name, mentionedAs: e.mentioned_as })),
+    metrics: payload.metrics,
+    filters: payload.filters,
+    time: payload.time
+      ? {
+          field: payload.time.field,
+          expression: payload.time.expression,
+          startDate: payload.time.start_date,
+          endDate: payload.time.end_date,
+          grain: payload.time.grain,
+        }
+      : null,
+    grouping: payload.grouping,
+    ranking: payload.ranking,
+    ambiguities: payload.ambiguities,
+  };
+}
+
+/**
+ * Understanding (one claude-haiku-4-5 call) then hybrid retrieval (dense +
+ * BM25, cross-encoder rerank). No SQL is generated yet.
+ */
+export async function generateSql(connectionId: string, question: string): Promise<QueryResponse> {
+  const res = await fetch(`${API_BASE_URL}/api/query`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ connection_id: connectionId, question }),
+  });
+  if (!res.ok) throw await parseApiError(res);
+  const payload: {
+    connection_id: string;
+    connection_label: string;
+    question: string;
+    understanding: UnderstandingPayload;
+    retrieval: RetrievalPayload;
+  } = await res.json();
+  return {
+    connectionId: payload.connection_id,
+    connectionLabel: payload.connection_label,
+    question: payload.question,
+    understanding: toUnderstanding(payload.understanding),
+    retrieval: toRetrieval(payload.retrieval),
+  };
+}
+
+export interface SparseBackfillResult {
+  scanned: number;
+  updated: number;
+  alreadyHadSparse: number;
+  skippedNoDocument: number;
+}
+
+/**
+ * Adds the missing `bm25` vector to this tenant's Qdrant points """ + EM + """ documents
+ * embedded before hybrid search existed carry only the dense one. Idempotent.
+ */
+export async function backfillSparseVectors(): Promise<SparseBackfillResult> {
+  const res = await fetch(`${API_BASE_URL}/api/vectorstore/backfill-sparse`, {
+    method: "POST",
+    credentials: "include",
+  });
+  if (!res.ok) throw await parseApiError(res);
+  const payload: {
+    scanned: number;
+    updated: number;
+    already_had_sparse: number;
+    skipped_no_document: number;
+  } = await res.json();
+  return {
+    scanned: payload.scanned,
+    updated: payload.updated,
+    alreadyHadSparse: payload.already_had_sparse,
+    skippedNoDocument: payload.skipped_no_document,
+  };
 }

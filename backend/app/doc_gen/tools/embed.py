@@ -5,7 +5,8 @@ from qdrant_client import models
 
 from ...core.config import get_settings
 from ...vectorstore import client as qdrant_client
-from ...vectorstore.collections import DENSE_VECTOR_NAME
+from ...vectorstore import sparse
+from ...vectorstore.collections import DENSE_VECTOR_NAME, SPARSE_VECTOR_NAME
 from ..clients import openai_client
 from ..clients.retry import with_retries
 
@@ -39,7 +40,12 @@ async def upsert_point(
         points=[
             models.PointStruct(
                 id=str(pid),
-                vector={DENSE_VECTOR_NAME: vector},
+                # Both halves: dense-only is what left older points
+                # unsearchable by the lexical arm.
+                vector={
+                    DENSE_VECTOR_NAME: vector,
+                    SPARSE_VECTOR_NAME: sparse.encode_document(document),
+                },
                 payload={
                     "tenant_id": str(tenant_id),
                     "connection_id": str(connection_id),

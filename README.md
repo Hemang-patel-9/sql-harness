@@ -40,9 +40,16 @@ design system.
 
 ## How it fits together
 
-The frontend posts a question to `POST /api/query`; the backend returns a SQL
-string. The translation is currently a stub in `backend/app/services.py` —
-replace it with a real model/LLM call.
+On the Query tab you pick one of your connected databases, then ask. The
+frontend posts `{connection_id, question}` to `POST /api/query` with the
+session cookie; the backend resolves that connection against your own tenant
+and answers. Two stages run, and the Query tab renders both. First one
+`claude-haiku-4-5` call reads out the question's structure — intent,
+entities, metrics, filters, time range, grouping and ranking. Then a hybrid
+search over Qdrant (dense on the question, BM25 on the extracted terms, top
+6 each) is reranked by a `bge-reranker-v2-m3` cross-encoder to pick the
+tables that could answer it. No SQL is generated yet. Only connections that
+passed "fire demo query" are offered, and the server enforces that too.
 
 The backend only allows CORS from `http://localhost:3000`. If you run the
 frontend elsewhere, add that origin to `CORS_ORIGINS` in `backend/.env`.

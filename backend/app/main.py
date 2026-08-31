@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 
@@ -14,6 +15,7 @@ from .doc_gen.clients import anthropic_client, openai_client
 from .doc_gen.routes import router as doc_gen_router
 from .memory import client as mem0
 from .memory.routes import router as memory_router
+from .query import rerank
 from .query.routes import router as query_router
 from .schema_explorer.routes import router as schema_router
 from .schema_ingest.routes import router as schema_ingest_router
@@ -31,6 +33,15 @@ class HealthResponse(BaseModel):
 class DbHealthResponse(BaseModel):
     connected: bool
     detail: str | None = None
+
+
+async def _warm_reranker() -> None:
+    try:
+        await rerank.warm()
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:  # noqa: BLE001 - non-fatal, logged for visibility only
+        log.warning("Reranker could not be loaded: %s", exc)
 
 
 @asynccontextmanager
@@ -82,7 +93,13 @@ async def lifespan(_: FastAPI):
     except Exception as exc:  # noqa: BLE001 - non-fatal, logged for visibility only
         log.warning("Anthropic not reachable: %s", exc)
 
+    # A cold cache means a 2.3GB download, so this is warmed off the startup
+    # path - the API serves meanwhile and only the first question waits.
+    warm_task = asyncio.create_task(_warm_reranker())
+
     yield
+
+    warm_task.cancel()
     await db.dispose()
     await qdrant.dispose()
     await mem0.dispose()

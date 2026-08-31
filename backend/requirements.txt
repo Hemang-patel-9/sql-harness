@@ -13,3 +13,5 @@ qdrant-client>=1.12
 mem0ai>=2.0
 openai>=1.60
 anthropic>=0.42
+fastembed>=0.8
+sentence-transformers>=5.0
