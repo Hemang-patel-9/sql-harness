@@ -21,7 +21,7 @@ import { engineIcon } from "./ui/engine-select";
 import { EmptyState, Panel, PanelHeader } from "./ui/page-shell";
 import { ApiError, listConnections, pollJob, startQuery, toQueryResponse } from "../lib/api";
 import type { Connection, JobProgress, QueryResponse, QueryResponsePayload } from "../lib/api";
-import { JobStats, JobTrace } from "./ui/job-progress";
+import { JobTrace, TokenUsagePanel } from "./ui/job-progress";
 import { ease } from "../lib/motion";
 import { useIsMounted } from "../lib/store";
 import { cn } from "../lib/utils";
@@ -345,12 +345,10 @@ export function QueryConsole() {
           >
             <Panel>
               <PanelHeader>
-                <span className="flex items-center gap-2">
-                  <span className="eyebrow">Working</span>
-                  {progress && <JobStats progress={progress} running />}
-                </span>
+                <span className="eyebrow">Working</span>
                 <Loader2 className="h-3.5 w-3.5 animate-spin text-muted" />
               </PanelHeader>
+              {progress && <TokenUsagePanel progress={progress} running className="mx-4 mt-3" />}
               {progress && progress.log.length > 0 ? (
                 <JobTrace progress={progress} className="p-4" />
               ) : (
@@ -409,11 +407,10 @@ export function QueryConsole() {
           >
             <div className="flex flex-col gap-4">
               {finalStats && (
-                <JobStats
+                <TokenUsagePanel
                   progress={finalStats.progress}
                   running={false}
                   frozenElapsedMs={finalStats.elapsedMs}
-                  className="px-1"
                 />
               )}
               <UnderstandingCard

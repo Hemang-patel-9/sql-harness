@@ -15,6 +15,13 @@ _MAX_LOG_LINES = 200
 
 
 @dataclass
+class UsageEvent:
+    phase: str
+    input_tokens: int
+    output_tokens: int
+
+
+@dataclass
 class Job:
     id: UUID
     kind: str
@@ -26,6 +33,7 @@ class Job:
     progress_log: list[str] = field(default_factory=list)
     tokens_input: int = 0
     tokens_output: int = 0
+    usage_log: list[UsageEvent] = field(default_factory=list)
     result: dict[str, Any] | None = None
     error: str | None = None
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
@@ -70,14 +78,16 @@ def step(job: Job, message: str, *, advance: bool = True) -> None:
     log.info("job %s (%s) [%d/%d] %s", job.id, job.kind, job.progress_current, job.progress_total, message)
 
 
-def add_tokens(job: Job, *, input_tokens: int, output_tokens: int) -> None:
+def add_tokens(job: Job, *, phase: str, input_tokens: int, output_tokens: int) -> None:
     job.tokens_input += input_tokens
     job.tokens_output += output_tokens
+    job.usage_log.append(UsageEvent(phase=phase, input_tokens=input_tokens, output_tokens=output_tokens))
     job.updated_at = datetime.now(UTC)
     log.info(
-        "job %s (%s) +%d in / +%d out tokens (total %d/%d)",
+        "job %s (%s) %s: +%d in / +%d out tokens (total %d/%d)",
         job.id,
         job.kind,
+        phase,
         input_tokens,
         output_tokens,
         job.tokens_input,

@@ -141,7 +141,7 @@ async def understand_question(
             messages=[{"role": "user", "content": prompt}],
             output_format=QueryUnderstanding,
         )
-        await on_usage(response.usage.input_tokens, response.usage.output_tokens)
+        await on_usage("Parsing intent", response.usage.input_tokens, response.usage.output_tokens)
         parsed = response.parsed_output
         if parsed is None:
             raise ValueError("The model returned no parsed output for this question")

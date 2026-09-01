@@ -67,7 +67,7 @@ async def generate_sql_draft(
             messages=[{"role": "user", "content": prompt}],
             output_format=SqlDraft,
         )
-        await on_usage(response.usage.input_tokens, response.usage.output_tokens)
+        await on_usage("Generating SQL", response.usage.input_tokens, response.usage.output_tokens)
         parsed = response.parsed_output
         if parsed is None:
             raise ValueError("The model returned no parsed output for SQL generation")

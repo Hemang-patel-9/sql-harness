@@ -11,6 +11,12 @@ class JobHandleResponse(BaseModel):
     job_id: UUID
 
 
+class UsageEventResponse(BaseModel):
+    phase: str
+    input_tokens: int
+    output_tokens: int
+
+
 class JobStatusResponse(BaseModel):
     id: UUID
     kind: str
@@ -21,6 +27,7 @@ class JobStatusResponse(BaseModel):
     progress_log: list[str]
     tokens_input: int
     tokens_output: int
+    usage_log: list[UsageEventResponse]
     result: dict[str, Any] | None
     error: str | None
     created_at: datetime

@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from ..auth.dependencies import Principal, get_current_principal
 from . import tracker
-from .schemas import JobStatusResponse
+from .schemas import JobStatusResponse, UsageEventResponse
 
 router = APIRouter(prefix="/api/jobs", tags=["jobs"])
 
@@ -28,6 +28,10 @@ async def get_job_status(
         progress_log=list(job.progress_log),
         tokens_input=job.tokens_input,
         tokens_output=job.tokens_output,
+        usage_log=[
+            UsageEventResponse(phase=e.phase, input_tokens=e.input_tokens, output_tokens=e.output_tokens)
+            for e in job.usage_log
+        ],
         result=job.result,
         error=job.error,
         created_at=job.created_at,

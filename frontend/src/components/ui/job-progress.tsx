@@ -1,5 +1,6 @@
+import { animate } from "motion/react";
 import { Check, Loader2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { JobProgress } from "../../lib/api";
 import { cn } from "../../lib/utils";
 
@@ -14,7 +15,26 @@ export function formatTokenCount(n: number): string {
   return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : `${n}`;
 }
 
-export function JobStats({
+function useAnimatedNumber(target: number): number {
+  const [display, setDisplay] = useState(target);
+  const prevRef = useRef(target);
+
+  useEffect(() => {
+    const from = prevRef.current;
+    prevRef.current = target;
+    if (from === target) return;
+    const controls = animate(from, target, {
+      duration: 0.6,
+      ease: "easeOut",
+      onUpdate: (value) => setDisplay(Math.round(value)),
+    });
+    return () => controls.stop();
+  }, [target]);
+
+  return display;
+}
+
+export function TokenUsagePanel({
   progress,
   running,
   frozenElapsedMs,
@@ -36,14 +56,46 @@ export function JobStats({
   const elapsedMs = running
     ? now - new Date(progress.createdAt).getTime()
     : (frozenElapsedMs ?? now - new Date(progress.createdAt).getTime());
-  const totalTokens = progress.tokensInput + progress.tokensOutput;
+  const animatedInput = useAnimatedNumber(progress.tokensInput);
+  const animatedOutput = useAnimatedNumber(progress.tokensOutput);
+
+  if (progress.usageLog.length === 0 && progress.tokensInput === 0) {
+    return (
+      <div className={cn("rounded-lg border border-line bg-surface-2/40 px-3 py-2", className)}>
+        <span className="font-mono text-[11px] text-muted">{formatDuration(elapsedMs)}</span>
+      </div>
+    );
+  }
 
   return (
-    <span className={cn("font-mono text-[11px] text-muted", className)}>
-      {formatDuration(elapsedMs)}
-      {totalTokens > 0 &&
-        ` · ${formatTokenCount(totalTokens)} tokens (${formatTokenCount(progress.tokensInput)} in / ${formatTokenCount(progress.tokensOutput)} out)`}
-    </span>
+    <div className={cn("overflow-hidden rounded-lg border border-line bg-surface-2/40", className)}>
+      {progress.usageLog.length > 0 && (
+        <ul className="flex flex-col gap-1 px-3 py-2">
+          {progress.usageLog.map((event, index) => (
+            <li
+              key={index}
+              className="flex items-center justify-between gap-3 font-mono text-[11px] leading-relaxed"
+            >
+              <span className="truncate text-ink-2">{event.phase}</span>
+              <span className="shrink-0 tabular-nums text-muted">
+                {formatTokenCount(event.inputTokens)} in · {formatTokenCount(event.outputTokens)} out
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+      <div
+        className={cn(
+          "flex items-center justify-between gap-3 px-3 py-2 font-mono text-[11px]",
+          progress.usageLog.length > 0 && "border-t border-line",
+        )}
+      >
+        <span className="text-ink">{formatDuration(elapsedMs)}</span>
+        <span className="tabular-nums text-ink">
+          {formatTokenCount(animatedInput)} in / {formatTokenCount(animatedOutput)} out
+        </span>
+      </div>
+    </div>
   );
 }
 

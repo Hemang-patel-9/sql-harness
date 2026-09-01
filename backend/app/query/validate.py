@@ -97,7 +97,7 @@ async def critique_sql(
             messages=[{"role": "user", "content": prompt}],
             output_format=SqlCritique,
         )
-        await on_usage(response.usage.input_tokens, response.usage.output_tokens)
+        await on_usage("Verifying the query", response.usage.input_tokens, response.usage.output_tokens)
         parsed = response.parsed_output
         if parsed is None:
             raise ValueError("The model returned no parsed output for the SQL critique")

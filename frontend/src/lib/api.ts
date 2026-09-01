@@ -28,6 +28,12 @@ export interface JobHandle {
   jobId: string;
 }
 
+export interface UsageEvent {
+  phase: string;
+  inputTokens: number;
+  outputTokens: number;
+}
+
 export interface JobProgress {
   current: number;
   total: number;
@@ -35,6 +41,7 @@ export interface JobProgress {
   log: string[];
   tokensInput: number;
   tokensOutput: number;
+  usageLog: UsageEvent[];
   createdAt: string;
 }
 
@@ -50,6 +57,7 @@ interface JobStatusPayload {
   progress_log: string[];
   tokens_input: number;
   tokens_output: number;
+  usage_log: Array<{ phase: string; input_tokens: number; output_tokens: number }>;
   result: unknown;
   error: string | null;
   created_at: string;
@@ -78,6 +86,11 @@ export async function pollJob<T>(
       log: payload.progress_log,
       tokensInput: payload.tokens_input,
       tokensOutput: payload.tokens_output,
+      usageLog: payload.usage_log.map((e) => ({
+        phase: e.phase,
+        inputTokens: e.input_tokens,
+        outputTokens: e.output_tokens,
+      })),
       createdAt: payload.created_at,
     });
     if (payload.status === "succeeded") return payload.result as T;

@@ -33,8 +33,8 @@ async def _run_query_job(
     async def on_progress(message: str) -> None:
         jobs.step(job, message)
 
-    async def on_usage(input_tokens: int, output_tokens: int) -> None:
-        jobs.add_tokens(job, input_tokens=input_tokens, output_tokens=output_tokens)
+    async def on_usage(phase: str, input_tokens: int, output_tokens: int) -> None:
+        jobs.add_tokens(job, phase=phase, input_tokens=input_tokens, output_tokens=output_tokens)
 
     try:
         result = await analyze_question(
