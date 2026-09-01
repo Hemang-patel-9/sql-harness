@@ -24,6 +24,70 @@ export class ApiError extends Error {
   }
 }
 
+export interface JobHandle {
+  jobId: string;
+}
+
+export interface JobProgress {
+  current: number;
+  total: number;
+  message: string;
+  log: string[];
+  tokensInput: number;
+  tokensOutput: number;
+  createdAt: string;
+}
+
+type JobStatus = "running" | "succeeded" | "failed";
+
+interface JobStatusPayload {
+  id: string;
+  kind: string;
+  status: JobStatus;
+  progress_current: number;
+  progress_total: number;
+  progress_message: string;
+  progress_log: string[];
+  tokens_input: number;
+  tokens_output: number;
+  result: unknown;
+  error: string | null;
+  created_at: string;
+}
+
+const JOB_POLL_INTERVAL_MS = 1200;
+
+async function fetchJobStatus(jobId: string): Promise<JobStatusPayload> {
+  const res = await fetch(`${API_BASE_URL}/api/jobs/${jobId}`, {
+    credentials: "include",
+  });
+  if (!res.ok) throw await parseApiError(res);
+  return res.json();
+}
+
+export async function pollJob<T>(
+  jobId: string,
+  onProgress?: (progress: JobProgress) => void,
+): Promise<T> {
+  for (;;) {
+    const payload = await fetchJobStatus(jobId);
+    onProgress?.({
+      current: payload.progress_current,
+      total: payload.progress_total,
+      message: payload.progress_message,
+      log: payload.progress_log,
+      tokensInput: payload.tokens_input,
+      tokensOutput: payload.tokens_output,
+      createdAt: payload.created_at,
+    });
+    if (payload.status === "succeeded") return payload.result as T;
+    if (payload.status === "failed") {
+      throw new ApiError(502, payload.error ?? "The job failed. Try again.");
+    }
+    await new Promise((resolve) => setTimeout(resolve, JOB_POLL_INTERVAL_MS));
+  }
+}
+
 interface UserPayload {
   id: string;
   email: string;
@@ -659,7 +723,7 @@ export interface DocumentListItem {
   embeddedAt: string | null;
 }
 
-function toTableDocument(payload: {
+export function toTableDocument(payload: {
   connection_id: string;
   schema_name: string | null;
   table_name: string;
@@ -752,18 +816,18 @@ export async function getTableDocument(
   return toTableDocument(await res.json());
 }
 
-/** Runs the two-stage LLM pipeline and replaces any previous document for this table. */
-export async function generateTableDocument(
+export async function startGenerateTableDocument(
   connectionId: string,
   tableName: string,
   schemaName: string | null,
-): Promise<TableDocument> {
+): Promise<JobHandle> {
   const res = await fetch(documentPath(connectionId, tableName, schemaName, "/generate"), {
     method: "POST",
     credentials: "include",
   });
   if (!res.ok) throw await parseApiError(res);
-  return toTableDocument(await res.json());
+  const payload: { job_id: string } = await res.json();
+  return { jobId: payload.job_id };
 }
 
 export async function editTableDocument(
@@ -804,21 +868,27 @@ export interface SyncResult {
 
 /** Brings every table up to date, doing only the work each one needs —
  * a table whose schema hasn't moved costs no LLM call and no embedding. */
-export async function syncTableDocuments(connectionId: string): Promise<SyncResult> {
+export async function startSyncTableDocuments(connectionId: string): Promise<JobHandle> {
   const res = await fetch(`${API_BASE_URL}/api/connections/${connectionId}/documents/sync`, {
     method: "POST",
     credentials: "include",
   });
   if (!res.ok) throw await parseApiError(res);
-  const payload: {
-    counts: Record<SyncAction, number>;
-    tables: Array<{
-      schema_name: string | null;
-      table_name: string;
-      action: SyncAction;
-      detail: string | null;
-    }>;
-  } = await res.json();
+  const payload: { job_id: string } = await res.json();
+  return { jobId: payload.job_id };
+}
+
+export interface SyncResultPayload {
+  counts: Record<SyncAction, number>;
+  tables: Array<{
+    schema_name: string | null;
+    table_name: string;
+    action: SyncAction;
+    detail: string | null;
+  }>;
+}
+
+export function toSyncResult(payload: SyncResultPayload): SyncResult {
   return {
     counts: payload.counts,
     tables: payload.tables.map((t) => ({
@@ -836,17 +906,24 @@ export interface IngestDocumentResult {
 }
 
 /** Embeds the document's current text and upserts it into Qdrant. */
-export async function ingestTableDocument(
+export async function startIngestTableDocument(
   connectionId: string,
   tableName: string,
   schemaName: string | null,
-): Promise<IngestDocumentResult> {
+): Promise<JobHandle> {
   const res = await fetch(documentPath(connectionId, tableName, schemaName, "/ingest"), {
     method: "POST",
     credentials: "include",
   });
   if (!res.ok) throw await parseApiError(res);
-  const payload: { qdrant_point_id: string; embedded_at: string } = await res.json();
+  const payload: { job_id: string } = await res.json();
+  return { jobId: payload.job_id };
+}
+
+export function toIngestDocumentResult(payload: {
+  qdrant_point_id: string;
+  embedded_at: string;
+}): IngestDocumentResult {
   return { qdrantPointId: payload.qdrant_point_id, embeddedAt: payload.embedded_at };
 }
 
@@ -965,6 +1042,23 @@ export interface Retrieval {
   note: string | null;
 }
 
+export type SqlIssueSeverity = "error" | "warning";
+
+export interface SqlIssue {
+  severity: SqlIssueSeverity;
+  message: string;
+}
+
+export interface GeneratedSqlResult {
+  sql: string;
+  dialect: string;
+  explanation: string;
+  tablesUsed: string[];
+  isValid: boolean;
+  issues: SqlIssue[];
+  criticNotes: string;
+}
+
 export interface QueryResponse {
   connectionId: string;
   /** Echoed back by the server, so the answer names the database it came from. */
@@ -972,6 +1066,7 @@ export interface QueryResponse {
   question: string;
   understanding: QueryUnderstanding;
   retrieval: Retrieval;
+  sql: GeneratedSqlResult | null;
 }
 
 interface RetrievalPayload {
@@ -1060,11 +1155,49 @@ function toUnderstanding(payload: UnderstandingPayload): QueryUnderstanding {
   };
 }
 
-/**
- * Understanding (one claude-haiku-4-5 call) then hybrid retrieval (dense +
- * BM25, cross-encoder rerank). No SQL is generated yet.
- */
-export async function generateSql(connectionId: string, question: string): Promise<QueryResponse> {
+interface GeneratedSqlPayload {
+  sql: string;
+  dialect: string;
+  explanation: string;
+  tables_used: string[];
+  is_valid: boolean;
+  issues: SqlIssue[];
+  critic_notes: string;
+}
+
+function toGeneratedSql(payload: GeneratedSqlPayload): GeneratedSqlResult {
+  return {
+    sql: payload.sql,
+    dialect: payload.dialect,
+    explanation: payload.explanation,
+    tablesUsed: payload.tables_used,
+    isValid: payload.is_valid,
+    issues: payload.issues,
+    criticNotes: payload.critic_notes,
+  };
+}
+
+export interface QueryResponsePayload {
+  connection_id: string;
+  connection_label: string;
+  question: string;
+  understanding: UnderstandingPayload;
+  retrieval: RetrievalPayload;
+  sql: GeneratedSqlPayload | null;
+}
+
+export function toQueryResponse(payload: QueryResponsePayload): QueryResponse {
+  return {
+    connectionId: payload.connection_id,
+    connectionLabel: payload.connection_label,
+    question: payload.question,
+    understanding: toUnderstanding(payload.understanding),
+    retrieval: toRetrieval(payload.retrieval),
+    sql: payload.sql ? toGeneratedSql(payload.sql) : null,
+  };
+}
+
+export async function startQuery(connectionId: string, question: string): Promise<JobHandle> {
   const res = await fetch(`${API_BASE_URL}/api/query`, {
     method: "POST",
     credentials: "include",
@@ -1072,20 +1205,8 @@ export async function generateSql(connectionId: string, question: string): Promi
     body: JSON.stringify({ connection_id: connectionId, question }),
   });
   if (!res.ok) throw await parseApiError(res);
-  const payload: {
-    connection_id: string;
-    connection_label: string;
-    question: string;
-    understanding: UnderstandingPayload;
-    retrieval: RetrievalPayload;
-  } = await res.json();
-  return {
-    connectionId: payload.connection_id,
-    connectionLabel: payload.connection_label,
-    question: payload.question,
-    understanding: toUnderstanding(payload.understanding),
-    retrieval: toRetrieval(payload.retrieval),
-  };
+  const payload: { job_id: string } = await res.json();
+  return { jobId: payload.job_id };
 }
 
 export interface SparseBackfillResult {

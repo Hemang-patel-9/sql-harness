@@ -140,7 +140,7 @@ payoff for running understanding first:
 
 | Arm | Query text | Why |
 | --- | --- | --- |
-| `dense` | the question as written | documents carry an EXAMPLE QUESTIONS section, so natural language has something to be close to |
+| `dense` | the question as written | documents carry a natural-language DESCRIPTION, so the question has something to be close to |
 | `bm25` | terms pulled from the understanding | lexical scoring wants discrete words, not "top 10 … by … last" |
 
 Each returns its own top 6 (`TOP_K_PER_ARM`). The union is deduplicated —
@@ -409,7 +409,7 @@ momentarily-down API shouldn't take the API down.
 `app/doc_gen/` turns one `schema_objects` row into a retrieval-ready text
 document — `TABLE`/`COLUMNS`/`RELATIONSHIPS`/`CONSTRAINTS`/`INDEXES` are
 rendered deterministically in Python (zero tokens, zero hallucination risk);
-only `DESCRIPTION`/`BUSINESS TERMS`/`EXAMPLE QUESTIONS` go through the LLMs.
+only `DESCRIPTION`/`BUSINESS TERMS` go through the LLMs.
 
 ```
 doc_gen/

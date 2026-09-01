@@ -5,13 +5,18 @@ import { useEffect, useState } from "react";
 import {
   ApiError,
   editTableDocument,
-  generateTableDocument,
   getTableDocument,
-  ingestTableDocument,
+  pollJob,
+  startGenerateTableDocument,
+  startIngestTableDocument,
+  toIngestDocumentResult,
+  toTableDocument,
   type DocumentListItem,
+  type JobProgress,
   type TableDocument,
 } from "../../../lib/api";
 import { Button } from "../../../components/ui/button";
+import { JobProgressBar } from "../../../components/ui/job-progress";
 import { cn } from "../../../lib/utils";
 
 function formatRelativeTime(iso: string): string {
@@ -49,6 +54,7 @@ export function IngestDocumentPanel({
 }) {
   const [action, setAction] = useState<Action>(cached || !listItem?.hasDocument ? null : "load");
   const [error, setError] = useState<string | null>(null);
+  const [progress, setProgress] = useState<JobProgress | null>(null);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
   const [confirmRegenerate, setConfirmRegenerate] = useState(false);
@@ -70,13 +76,15 @@ export function IngestDocumentPanel({
     setAction("generate");
     setError(null);
     try {
-      const doc = await generateTableDocument(connectionId, tableName, schemaName);
-      onChange(doc);
+      const handle = await startGenerateTableDocument(connectionId, tableName, schemaName);
+      const payload = await pollJob<Parameters<typeof toTableDocument>[0]>(handle.jobId, setProgress);
+      onChange(toTableDocument(payload));
       setEditing(false);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Could not generate a document for this table.");
     } finally {
       setAction((current) => (current === "generate" ? null : current));
+      setProgress(null);
     }
   }
 
@@ -98,13 +106,15 @@ export function IngestDocumentPanel({
     setAction("ingest");
     setError(null);
     try {
-      await ingestTableDocument(connectionId, tableName, schemaName);
+      const handle = await startIngestTableDocument(connectionId, tableName, schemaName);
+      await pollJob<Parameters<typeof toIngestDocumentResult>[0]>(handle.jobId, setProgress);
       const doc = await getTableDocument(connectionId, tableName, schemaName);
       if (doc) onChange(doc);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Could not embed this document.");
     } finally {
       setAction((current) => (current === "ingest" ? null : current));
+      setProgress(null);
     }
   }
 
@@ -211,6 +221,10 @@ export function IngestDocumentPanel({
           )}
         </div>
       </div>
+
+      {progress && (action === "generate" || action === "ingest") && (
+        <JobProgressBar progress={progress} className="mt-2.5" />
+      )}
 
       {error && <p className="mt-2.5 text-xs text-danger">{error}</p>}
 

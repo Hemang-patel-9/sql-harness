@@ -13,6 +13,7 @@ from .core.config import get_settings
 from .core.crypto import EncryptionKeyError, ensure_encryption_key_configured
 from .doc_gen.clients import anthropic_client, openai_client
 from .doc_gen.routes import router as doc_gen_router
+from .jobs.routes import router as jobs_router
 from .memory import client as mem0
 from .memory.routes import router as memory_router
 from .query import rerank
@@ -127,6 +128,7 @@ app.include_router(query_router)
 app.include_router(vectorstore_router)
 app.include_router(memory_router)
 app.include_router(doc_gen_router)
+app.include_router(jobs_router)
 
 
 @app.get("/", response_model=HealthResponse)

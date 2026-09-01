@@ -1,3 +1,4 @@
+import logging
 import uuid
 from uuid import UUID
 
@@ -9,6 +10,8 @@ from ...vectorstore import sparse
 from ...vectorstore.collections import DENSE_VECTOR_NAME, SPARSE_VECTOR_NAME
 from ..clients import openai_client
 from ..clients.retry import with_retries
+
+log = logging.getLogger("uvicorn.error")
 
 EMBEDDING_MODEL = "text-embedding-3-large"
 
@@ -35,6 +38,7 @@ async def upsert_point(
     vector: list[float],
 ) -> UUID:
     pid = point_id(connection_id, schema_name, table_name)
+    log.info("embed: upserting %s.%s (point %s) into qdrant", schema_name, table_name, pid)
     await qdrant_client.get_client().upsert(
         collection_name=get_settings().qdrant_collection_name,
         points=[

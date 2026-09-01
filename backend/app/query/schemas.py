@@ -177,6 +177,45 @@ class Retrieval(BaseModel):
     note: str | None = None
 
 
+class SqlIssueSeverity(StrEnum):
+    error = "error"
+    warning = "warning"
+
+
+class SqlIssue(BaseModel):
+    severity: SqlIssueSeverity
+    message: str
+
+
+class SqlDraft(BaseModel):
+    """The analyst-equivalent step: a first-pass query."""
+
+    sql: str
+    explanation: str
+    tables_used: list[str]
+
+
+class SqlCritique(BaseModel):
+    """The critic-equivalent step: reviews the draft against the question and schema."""
+
+    is_valid: bool
+    issues: list[str]
+    revised_sql: str | None
+    notes: str
+
+
+class GeneratedSql(BaseModel):
+    """What the frontend renders: the final SQL plus how much to trust it."""
+
+    sql: str
+    dialect: str
+    explanation: str
+    tables_used: list[str]
+    is_valid: bool
+    issues: list[SqlIssue]
+    critic_notes: str
+
+
 class QueryResponse(BaseModel):
     """Echoes the connection back so the caller can confirm the request was
     understood as the database they picked, not just that a 200 came back."""
@@ -186,3 +225,4 @@ class QueryResponse(BaseModel):
     question: str
     understanding: QueryUnderstanding
     retrieval: Retrieval
+    sql: GeneratedSql | None = None

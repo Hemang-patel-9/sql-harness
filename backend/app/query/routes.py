@@ -1,4 +1,6 @@
+import asyncio
 import logging
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -6,21 +8,63 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..auth.dependencies import Principal, get_current_principal
 from ..connections import repo as connections_repo
 from ..core.db import get_session
-from .schemas import QueryRequest, QueryResponse
+from ..jobs import tracker as jobs
+from ..jobs.schemas import JobHandleResponse
+from ..jobs.tracker import Job
+from .schemas import QueryRequest
 from .service import analyze_question
 
 log = logging.getLogger("uvicorn.error")
 
 router = APIRouter(prefix="/api", tags=["query"])
 
+_QUERY_JOB_STEPS = 13
 
-@router.post("/query", response_model=QueryResponse)
+
+async def _run_query_job(
+    job: Job,
+    *,
+    question: str,
+    tenant_id: UUID,
+    connection_id: UUID,
+    connection_label: str,
+    engine: str,
+) -> None:
+    async def on_progress(message: str) -> None:
+        jobs.step(job, message)
+
+    async def on_usage(input_tokens: int, output_tokens: int) -> None:
+        jobs.add_tokens(job, input_tokens=input_tokens, output_tokens=output_tokens)
+
+    try:
+        result = await analyze_question(
+            question,
+            tenant_id=tenant_id,
+            connection_id=connection_id,
+            connection_label=connection_label,
+            engine=engine,
+            on_progress=on_progress,
+            on_usage=on_usage,
+        )
+        jobs.succeed(job, result.model_dump(mode="json"))
+    except Exception:  # noqa: BLE001 - upstream failure, not a bug in this request
+        log.exception("Query analysis failed for connection %s", connection_id)
+        jobs.fail(
+            job,
+            "Could not analyze the question - the language model or the vector store "
+            "was unreachable. Try again.",
+        )
+
+
+@router.post("/query", response_model=JobHandleResponse)
 async def query(
     payload: QueryRequest,
     principal: Principal = Depends(get_current_principal),
     session: AsyncSession = Depends(get_session),
-) -> QueryResponse:
-    """Ask one of the caller's own connected databases a question.
+) -> JobHandleResponse:
+    """Kicks off understanding + retrieval for one of the caller's connected
+    databases and returns a job id - poll GET /api/jobs/{job_id} for progress
+    and the final QueryResponse.
 
     The lookup is tenant-scoped, so another tenant's connection id is a 404
     rather than a 403 - a 403 would confirm it exists.
@@ -39,19 +83,15 @@ async def query(
             detail="Fire a successful demo query on this connection before asking questions against it.",
         )
 
-    try:
-        return await analyze_question(
-            payload.question,
+    job = jobs.create_job("query", tenant_id=principal.tenant_id, total=_QUERY_JOB_STEPS)
+    asyncio.create_task(
+        _run_query_job(
+            job,
+            question=payload.question,
             tenant_id=principal.tenant_id,
             connection_id=payload.connection_id,
             connection_label=connection["label"],
+            engine=connection["engine"],
         )
-    except Exception as exc:  # noqa: BLE001 - upstream failure, not a bug in this request
-        # The provider's message can name the account or the key, so it goes
-        # to the log and a flat sentence goes to the caller.
-        log.exception("Query analysis failed for connection %s", payload.connection_id)
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Could not analyze the question - the language model or the vector store "
-            "was unreachable. Try again.",
-        ) from exc
+    )
+    return JobHandleResponse(job_id=job.id)

@@ -12,14 +12,16 @@ import {
   Sparkles,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { GeneratedSqlCard } from "./generated-sql-card";
 import { RetrievalCard } from "./retrieval-card";
 import { UnderstandingCard } from "./understanding-card";
 import { Button, ButtonLink } from "./ui/button";
 import { Dropdown, DropdownItem } from "./ui/dropdown";
 import { engineIcon } from "./ui/engine-select";
 import { EmptyState, Panel, PanelHeader } from "./ui/page-shell";
-import { ApiError, generateSql, listConnections } from "../lib/api";
-import type { Connection, QueryResponse } from "../lib/api";
+import { ApiError, listConnections, pollJob, startQuery, toQueryResponse } from "../lib/api";
+import type { Connection, JobProgress, QueryResponse, QueryResponsePayload } from "../lib/api";
+import { JobStats, JobTrace } from "./ui/job-progress";
 import { ease } from "../lib/motion";
 import { useIsMounted } from "../lib/store";
 import { cn } from "../lib/utils";
@@ -108,8 +110,11 @@ export function QueryConsole() {
   const [result, setResult] = useState<QueryResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [progress, setProgress] = useState<JobProgress | null>(null);
+  const [finalStats, setFinalStats] = useState<{ progress: JobProgress; elapsedMs: number } | null>(null);
   const [focused, setFocused] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const lastProgressRef = useRef<JobProgress | null>(null);
 
   // Name the key the reader actually has on their keyboard.
   const mounted = useIsMounted();
@@ -143,6 +148,7 @@ export function QueryConsole() {
     // An answer from the previous database would read as this one's.
     setResult(null);
     setError(null);
+    setFinalStats(null);
   }
 
   async function run(text: string) {
@@ -152,9 +158,20 @@ export function QueryConsole() {
     setLoading(true);
     setError(null);
     setResult(null);
+    setProgress(null);
+    setFinalStats(null);
 
     try {
-      setResult(await generateSql(selectedId, trimmed));
+      const handle = await startQuery(selectedId, trimmed);
+      const payload = await pollJob<QueryResponsePayload>(handle.jobId, (p) => {
+        lastProgressRef.current = p;
+        setProgress(p);
+      });
+      setResult(toQueryResponse(payload));
+      const last = lastProgressRef.current;
+      if (last) {
+        setFinalStats({ progress: last, elapsedMs: Date.now() - new Date(last.createdAt).getTime() });
+      }
     } catch (err) {
       setError(
         err instanceof ApiError
@@ -163,6 +180,7 @@ export function QueryConsole() {
       );
     } finally {
       setLoading(false);
+      setProgress(null);
     }
   }
 
@@ -327,27 +345,34 @@ export function QueryConsole() {
           >
             <Panel>
               <PanelHeader>
-                <span className="eyebrow">Reading the question, then searching</span>
+                <span className="flex items-center gap-2">
+                  <span className="eyebrow">Working</span>
+                  {progress && <JobStats progress={progress} running />}
+                </span>
                 <Loader2 className="h-3.5 w-3.5 animate-spin text-muted" />
               </PanelHeader>
-              <div className="flex flex-col gap-2.5 p-4">
-                {[92, 74, 58, 81, 40].map((width, index) => (
-                  <motion.span
-                    key={width}
-                    aria-hidden
-                    initial={{ opacity: 0.35 }}
-                    animate={{ opacity: [0.35, 0.75, 0.35] }}
-                    transition={{
-                      duration: 1.4,
-                      repeat: Infinity,
-                      delay: index * 0.12,
-                      ease: "easeInOut",
-                    }}
-                    style={{ width: `${width}%` }}
-                    className="h-2.5 rounded-sm bg-surface-2"
-                  />
-                ))}
-              </div>
+              {progress && progress.log.length > 0 ? (
+                <JobTrace progress={progress} className="p-4" />
+              ) : (
+                <div className="flex flex-col gap-2.5 p-4">
+                  {[92, 74, 58, 81, 40].map((width, index) => (
+                    <motion.span
+                      key={width}
+                      aria-hidden
+                      initial={{ opacity: 0.35 }}
+                      animate={{ opacity: [0.35, 0.75, 0.35] }}
+                      transition={{
+                        duration: 1.4,
+                        repeat: Infinity,
+                        delay: index * 0.12,
+                        ease: "easeInOut",
+                      }}
+                      style={{ width: `${width}%` }}
+                      className="h-2.5 rounded-sm bg-surface-2"
+                    />
+                  ))}
+                </div>
+              )}
             </Panel>
           </motion.div>
         )}
@@ -383,10 +408,19 @@ export function QueryConsole() {
             transition={ease}
           >
             <div className="flex flex-col gap-4">
+              {finalStats && (
+                <JobStats
+                  progress={finalStats.progress}
+                  running={false}
+                  frozenElapsedMs={finalStats.elapsedMs}
+                  className="px-1"
+                />
+              )}
               <UnderstandingCard
                 understanding={result.understanding}
                 connectionLabel={result.connectionLabel}
               />
+              {result.sql && <GeneratedSqlCard sql={result.sql} />}
               <RetrievalCard retrieval={result.retrieval} />
             </div>
           </motion.div>

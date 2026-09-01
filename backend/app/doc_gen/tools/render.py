@@ -96,10 +96,8 @@ def render_document(
     *,
     description: str,
     business_terms: list[BusinessTerm],
-    example_questions: list[str],
 ) -> str:
     business_terms_block = "\n".join(" = ".join([term.term, *term.synonyms]) for term in business_terms)
-    example_questions_block = "\n".join(f"- {q}" for q in example_questions)
 
     sections = [
         f"TABLE: {table.table}",
@@ -109,6 +107,5 @@ def render_document(
         f"BUSINESS TERMS:\n{business_terms_block}",
         f"CONSTRAINTS:\n{render_constraints_block(table)}",
         f"INDEXES:\n{render_indexes_block(table)}",
-        f"EXAMPLE QUESTIONS:\n{example_questions_block}",
     ]
     return "\n\n".join(sections)

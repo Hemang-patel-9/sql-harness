@@ -15,6 +15,7 @@ from uuid import UUID
 from qdrant_client import models
 
 from ..core.config import get_settings
+from ..core.progress import ProgressFn, noop_progress
 from ..doc_gen.tools.embed import embed_text
 from ..vectorstore import sparse
 from ..vectorstore.client import get_client
@@ -93,6 +94,7 @@ async def retrieve_tables(
     connection_id: UUID,
     question: str,
     understanding: QueryUnderstanding,
+    on_progress: ProgressFn = noop_progress,
 ) -> tuple[list[Candidate], str]:
     """Returns the reranked candidates and the keyword query BM25 was given."""
     client = get_client()
@@ -101,6 +103,7 @@ async def retrieve_tables(
 
     keyword_query = build_keyword_query(understanding)
 
+    await on_progress("Searching semantically for relevant tables…")
     dense_hits = await client.query_points(
         collection_name=collection,
         query=await embed_text(question),
@@ -109,11 +112,12 @@ async def retrieve_tables(
         limit=TOP_K_PER_ARM,
         with_payload=True,
     )
+    log.info("retrieve: dense arm returned %d hit(s)", len(dense_hits.points))
+    await on_progress(f"Found {len(dense_hits.points)} table(s) via semantic search")
 
-    # An empty BM25 query matches everything equally, which is noise, not
-    # recall - so a question with no extractable terms skips the lexical arm.
     bm25_hits = None
     if keyword_query:
+        await on_progress(f'Cross-checking keywords: "{keyword_query}"')
         bm25_hits = await client.query_points(
             collection_name=collection,
             query=sparse.encode_query(keyword_query),
@@ -122,6 +126,10 @@ async def retrieve_tables(
             limit=TOP_K_PER_ARM,
             with_payload=True,
         )
+        log.info("retrieve: bm25 arm returned %d hit(s) for query %r", len(bm25_hits.points), keyword_query)
+        await on_progress(f"Keyword search matched {len(bm25_hits.points)} table(s)")
+    else:
+        log.info("retrieve: bm25 arm skipped - no keyword terms extracted")
 
     candidates: dict[tuple[str | None, str], Candidate] = {}
 
@@ -150,12 +158,17 @@ async def retrieve_tables(
 
     ordered = list(candidates.values())
     if not ordered:
+        log.info("retrieve: no candidates from either arm - nothing to rerank")
+        await on_progress("No matching tables found for this question")
         return [], keyword_query
 
-    # The question, not the keyword query: the cross-encoder wants the phrasing.
     scores = await rerank_scores(question, [c.document for c in ordered])
     for candidate, score in zip(ordered, scores, strict=True):
         candidate.rerank_score = score
 
     ordered.sort(key=lambda c: c.rerank_score, reverse=True)
+    best = ordered[0]
+    top_name = f"{best.schema_name}.{best.table_name}" if best.schema_name else best.table_name
+    log.info("retrieve: reranked %d candidate(s), top=%r", len(ordered), top_name)
+    await on_progress(f"Best match: {top_name} (score {best.rerank_score:.2f})")
     return ordered, keyword_query

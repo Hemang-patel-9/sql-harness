@@ -13,7 +13,6 @@ class BusinessTerm(BaseModel):
 class AnalystDraft(BaseModel):
     description: str
     business_terms: list[BusinessTerm]
-    example_questions: list[str]
 
 
 class CriticRefinement(BaseModel):
@@ -22,7 +21,6 @@ class CriticRefinement(BaseModel):
     suggestions: list[str]
     refined_description: str
     refined_business_terms: list[BusinessTerm]
-    refined_example_questions: list[str]
 
 
 class GeneratedDocument(BaseModel):

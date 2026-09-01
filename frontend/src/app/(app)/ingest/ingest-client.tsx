@@ -7,19 +7,24 @@ import {
   getIngestStatus,
   listIngestConnections,
   listTableDocuments,
+  pollJob,
   processIngest,
-  syncTableDocuments,
+  startSyncTableDocuments,
+  toSyncResult,
 } from "../../../lib/api";
 import type {
   DocumentListItem,
   IngestConnectionSummary,
   IngestResult,
+  JobProgress,
   SyncAction,
   SyncResult,
+  SyncResultPayload,
   TableDocument,
 } from "../../../lib/api";
 import { engineIcon } from "../../../components/ui/engine-select";
 import { Button, ButtonLink } from "../../../components/ui/button";
+import { JobProgressBar } from "../../../components/ui/job-progress";
 import { EmptyState, Panel, PageShell } from "../../../components/ui/page-shell";
 import { cn } from "../../../lib/utils";
 import { IngestTablePreview } from "./ingest-table-preview";
@@ -190,6 +195,7 @@ export function IngestClient() {
   const [documents, setDocuments] = useState<Record<string, Record<string, TableDocument>>>({});
   const [syncingId, setSyncingId] = useState<string | null>(null);
   const [syncResults, setSyncResults] = useState<Record<string, SyncResult>>({});
+  const [syncProgress, setSyncProgress] = useState<Record<string, JobProgress>>({});
 
   useEffect(() => {
     listIngestConnections()
@@ -240,7 +246,11 @@ export function IngestClient() {
       return next;
     });
     try {
-      const result = await syncTableDocuments(connectionId);
+      const handle = await startSyncTableDocuments(connectionId);
+      const payload = await pollJob<SyncResultPayload>(handle.jobId, (progress) =>
+        setSyncProgress((prev) => ({ ...prev, [connectionId]: progress })),
+      );
+      const result = toSyncResult(payload);
       setSyncResults((prev) => ({ ...prev, [connectionId]: result }));
       const documentList = await listTableDocuments(connectionId);
       setDocumentLists((prev) => ({ ...prev, [connectionId]: documentList }));
@@ -260,6 +270,11 @@ export function IngestClient() {
       }));
     } finally {
       setSyncingId((current) => (current === connectionId ? null : current));
+      setSyncProgress((prev) => {
+        const next = { ...prev };
+        delete next[connectionId];
+        return next;
+      });
     }
   }
 
@@ -369,6 +384,7 @@ export function IngestClient() {
               const isExpanded = expandedId === connection.connectionId;
               const processError = processErrors[connection.connectionId];
               const syncResult = syncResults[connection.connectionId];
+              const activeSyncProgress = syncProgress[connection.connectionId];
 
               return (
                 <li key={connection.connectionId}>
@@ -478,6 +494,8 @@ export function IngestClient() {
                         <span>{processError}</span>
                       </div>
                     )}
+
+                    {isSyncing && activeSyncProgress && <JobProgressBar progress={activeSyncProgress} />}
 
                     {syncResult && !isSyncing && <SyncSummary result={syncResult} />}
                   </div>
