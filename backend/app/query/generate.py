@@ -31,6 +31,9 @@ need, say so in `explanation` and do your best with what's connectable.
 - Alias every table and qualify every column reference, so a reader can see where each value
 comes from.
 - Add a LIMIT when the question asks for a ranking or doesn't clearly want every row.
+- On Postgres, an unquoted identifier is folded to lowercase. If a table or column name in the \
+schema isn't all-lowercase, double-quote it with its exact case every single time you reference \
+it - in the FROM/JOIN, in SELECT, in WHERE, in GROUP BY, everywhere - not just the first time.
 
 Produce:
 - sql: the query, formatted for a human to read.

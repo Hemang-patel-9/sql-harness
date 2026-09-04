@@ -34,10 +34,16 @@ TOP_N_FOR_SQL = 5
 
 async def _load_schema_context(
     tenant_id: UUID, connection_id: UUID, tables: list[RetrievedTable]
-) -> tuple[str, set[str]]:
+) -> tuple[str, set[str], dict[str, str]]:
     top = tables[:TOP_N_FOR_SQL]
     contexts: list[str] = []
     known_tables: set[str] = set()
+    known_identifiers: dict[str, str] = {}
+
+    def _track(name: str) -> None:
+        if name.lower() != name:
+            known_identifiers[name.lower()] = name
+
     async with SessionLocal() as session:
         for candidate in top:
             obj = await ingest_repo.get_object(
@@ -53,7 +59,10 @@ async def _load_schema_context(
             normalized = NormalizedTable.model_validate(ingest_repo.parse_json(obj["normalized_json"]))
             contexts.append(build_schema_context(normalized))
             known_tables.add(normalized.table)
-    return "\n\n---\n\n".join(contexts), known_tables
+            _track(normalized.table)
+            for column in normalized.columns:
+                _track(column.name)
+    return "\n\n---\n\n".join(contexts), known_tables, known_identifiers
 
 
 async def _generate_sql(
@@ -70,7 +79,9 @@ async def _generate_sql(
     top = tables[:TOP_N_FOR_SQL]
     top_names = ", ".join(t.table_name for t in top)
     await on_progress(f"Looking at {len(top)} candidate table(s): {top_names}")
-    schema_context, known_tables = await _load_schema_context(tenant_id, connection_id, tables)
+    schema_context, known_tables, known_identifiers = await _load_schema_context(
+        tenant_id, connection_id, tables
+    )
     if not schema_context:
         log.warning("query: connection=%s no usable schema context, skipping SQL generation", connection_id)
         await on_progress("Could not load a schema for the retrieved tables - skipping SQL generation")
@@ -98,6 +109,9 @@ async def _generate_sql(
     final_sql = critique.revised_sql or draft.sql
     if critique.revised_sql and critique.revised_sql != draft.sql:
         static_issues = validate.static_validate(final_sql, engine=dialect, known_tables=known_tables)
+    final_sql = validate.normalize_identifier_case(
+        final_sql, engine=dialect, known_identifiers=known_identifiers
+    )
 
     has_static_errors = any(issue.severity == SqlIssueSeverity.error for issue in static_issues)
     is_valid = critique.is_valid and not has_static_errors

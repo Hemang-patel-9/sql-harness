@@ -68,6 +68,32 @@ def static_validate(sql: str, *, engine: str, known_tables: set[str]) -> list[Sq
     return issues
 
 
+def normalize_identifier_case(sql: str, *, engine: str, known_identifiers: dict[str, str]) -> str:
+    if engine != "postgresql" or not known_identifiers:
+        return sql
+    try:
+        parsed = sqlglot.parse_one(sql, dialect="postgres")
+    except Exception:  # noqa: BLE001 - leave unparseable SQL as-is; static_validate already reports it
+        return sql
+
+    changed = False
+    for node in parsed.find_all(exp.Column, exp.Table):
+        identifier = node.this
+        if not isinstance(identifier, exp.Identifier):
+            continue
+        canonical = known_identifiers.get(identifier.this.lower())
+        if canonical and (identifier.this != canonical or not identifier.args.get("quoted")):
+            identifier.set("this", canonical)
+            identifier.set("quoted", True)
+            changed = True
+
+    if not changed:
+        return sql
+    fixed = parsed.sql(dialect="postgres")
+    log.info("sql validate: normalized identifier quoting")
+    return fixed
+
+
 async def critique_sql(
     question: str,
     draft: SqlDraft,
